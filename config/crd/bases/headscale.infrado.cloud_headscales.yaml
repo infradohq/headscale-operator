@@ -1,0 +1,584 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: headscales.headscale.infrado.cloud
+spec:
+  group: headscale.infrado.cloud
+  names:
+    kind: Headscale
+    listKind: HeadscaleList
+    plural: headscales
+    singular: headscale
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: Headscale is the Schema for the headscales API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of Headscale
+            properties:
+              config:
+                description: Config holds custom configuration for Headscale.
+                properties:
+                  acme_email:
+                    description: ACMEEmail is the email for ACME registration
+                    type: string
+                  acme_url:
+                    default: https://acme-v02.api.letsencrypt.org/directory
+                    description: ACMEURL is the ACME directory URL
+                    type: string
+                  database:
+                    description: Database configuration
+                    properties:
+                      debug:
+                        default: false
+                        description: Debug enables debug mode
+                        type: boolean
+                      gorm:
+                        description: Gorm configuration
+                        properties:
+                          parameterized_queries:
+                            default: true
+                            description: ParameterizedQueries enables parameterized
+                              queries
+                            type: boolean
+                          prepare_stmt:
+                            default: true
+                            description: PrepareStmt enables prepared statements
+                            type: boolean
+                          skip_err_record_not_found:
+                            default: true
+                            description: SkipErrRecordNotFound skips "record not found"
+                              errors
+                            type: boolean
+                          slow_threshold:
+                            default: 1000
+                            description: SlowThreshold is the threshold for slow queries
+                              in milliseconds
+                            type: integer
+                        type: object
+                      postgres:
+                        description: Postgres configuration
+                        properties:
+                          conn_max_idle_time_secs:
+                            default: 3600
+                            description: ConnMaxIdleTimeSecs is the maximum connection
+                              idle time in seconds
+                            type: integer
+                          host:
+                            description: Host is the PostgreSQL host
+                            type: string
+                          max_idle_conns:
+                            default: 10
+                            description: MaxIdleConns is the maximum number of idle
+                              connections
+                            type: integer
+                          max_open_conns:
+                            default: 10
+                            description: MaxOpenConns is the maximum number of open
+                              connections
+                            type: integer
+                          name:
+                            description: Name is the database name
+                            type: string
+                          pass:
+                            description: Pass is the database password
+                            type: string
+                          port:
+                            description: Port is the PostgreSQL port
+                            type: integer
+                          ssl:
+                            default: false
+                            description: SSL indicates whether to use SSL
+                            type: boolean
+                          user:
+                            description: User is the database user
+                            type: string
+                        type: object
+                      sqlite:
+                        description: Sqlite configuration
+                        properties:
+                          path:
+                            default: /var/lib/headscale/db.sqlite
+                            description: Path is the path to the SQLite database file
+                            type: string
+                          wal_autocheckpoint:
+                            default: 1000
+                            description: WALAutocheckpoint sets the WAL autocheckpoint
+                              value
+                            type: integer
+                          write_ahead_log:
+                            default: true
+                            description: WriteAheadLog enables WAL mode
+                            type: boolean
+                        type: object
+                      type:
+                        default: sqlite
+                        description: Type is the database type
+                        enum:
+                        - sqlite
+                        - postgres
+                        type: string
+                    type: object
+                  derp:
+                    description: DERP configuration
+                    properties:
+                      auto_update_enabled:
+                        default: true
+                        description: AutoUpdateEnabled indicates whether to auto-update
+                          DERP maps
+                        type: boolean
+                      paths:
+                        description: Paths is the list of local DERP map file paths
+                        items:
+                          type: string
+                        type: array
+                      server:
+                        description: Server configuration for embedded DERP server
+                        properties:
+                          automatically_add_embedded_derp_region:
+                            default: true
+                            description: AutomaticallyAddEmbeddedDerpRegion indicates
+                              whether to automatically add the embedded DERP region
+                            type: boolean
+                          enabled:
+                            default: false
+                            description: Enabled indicates if the embedded DERP server
+                              is enabled
+                            type: boolean
+                          ipv4:
+                            description: IPv4 is the public IPv4 address
+                            type: string
+                          ipv6:
+                            description: IPv6 is the public IPv6 address
+                            type: string
+                          private_key_path:
+                            default: /var/lib/headscale/derp_server_private.key
+                            description: PrivateKeyPath is the path to the DERP server
+                              private key
+                            type: string
+                          region_code:
+                            default: headscale
+                            description: RegionCode is the region code for display
+                            type: string
+                          region_id:
+                            default: 999
+                            description: RegionID is the region ID for the embedded
+                              DERP server
+                            type: integer
+                          region_name:
+                            default: Headscale Embedded DERP
+                            description: RegionName is the region name for display
+                            type: string
+                          stun_listen_addr:
+                            default: 0.0.0.0:3478
+                            description: STUNListenAddr is the address for STUN connections
+                            type: string
+                          verify_clients:
+                            default: true
+                            description: VerifyClients indicates whether to verify
+                              clients
+                            type: boolean
+                        type: object
+                      update_frequency:
+                        default: 3h
+                        description: UpdateFrequency is how often to check for DERP
+                          updates
+                        type: string
+                      urls:
+                        description: URLs is the list of external DERP map URLs
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  disable_check_updates:
+                    default: false
+                    description: DisableCheckUpdates disables update checks
+                    type: boolean
+                  dns:
+                    description: DNS configuration
+                    properties:
+                      base_domain:
+                        description: BaseDomain is the base domain for MagicDNS
+                        type: string
+                      extra_records:
+                        description: ExtraRecords is the list of extra DNS records
+                        items:
+                          description: DNSExtraRecord represents an extra DNS record
+                          properties:
+                            name:
+                              description: Name is the DNS record name
+                              type: string
+                            type:
+                              description: Type is the DNS record type
+                              enum:
+                              - A
+                              - AAAA
+                              type: string
+                            value:
+                              description: Value is the DNS record value
+                              type: string
+                          type: object
+                        type: array
+                      magic_dns:
+                        default: true
+                        description: MagicDNS enables MagicDNS
+                        type: boolean
+                      nameservers:
+                        description: Nameservers configuration
+                        properties:
+                          global:
+                            description: Global nameservers
+                            items:
+                              type: string
+                            type: array
+                          split:
+                            additionalProperties:
+                              items:
+                                type: string
+                              type: array
+                            description: Split DNS configuration
+                            type: object
+                        type: object
+                      override_local_dns:
+                        default: true
+                        description: OverrideLocalDNS overrides local DNS settings
+                        type: boolean
+                      search_domains:
+                        description: SearchDomains is the list of search domains
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  ephemeral_node_inactivity_timeout:
+                    default: 30m
+                    description: EphemeralNodeInactivityTimeout is the timeout for
+                      ephemeral nodes
+                    type: string
+                  grpc_allow_insecure:
+                    default: false
+                    description: GRPCAllowInsecure allows insecure gRPC
+                    type: boolean
+                  grpc_listen_addr:
+                    default: 0.0.0.0:50443
+                    description: GRPCListenAddr is the address for gRPC
+                    type: string
+                  listen_addr:
+                    default: 0.0.0.0:8080
+                    description: ListenAddr is the address to listen on
+                    type: string
+                  log:
+                    description: Log configuration
+                    properties:
+                      format:
+                        default: text
+                        description: Format is the log format
+                        enum:
+                        - text
+                        - json
+                        type: string
+                      level:
+                        default: info
+                        description: Level is the log level
+                        enum:
+                        - panic
+                        - fatal
+                        - error
+                        - warn
+                        - info
+                        - debug
+                        - trace
+                        type: string
+                    type: object
+                  logtail:
+                    description: LogTail configuration
+                    properties:
+                      enabled:
+                        default: false
+                        description: Enabled indicates if Logtail is enabled
+                        type: boolean
+                    type: object
+                  metrics_listen_addr:
+                    default: 0.0.0.0:9090
+                    description: MetricsListenAddr is the address for metrics
+                    type: string
+                  noise:
+                    description: Noise configuration
+                    properties:
+                      private_key_path:
+                        default: /var/lib/headscale/noise_private.key
+                        description: PrivateKeyPath is the path to the Noise private
+                          key
+                        type: string
+                    type: object
+                  oidc:
+                    description: OIDC configuration
+                    properties:
+                      allowed_domains:
+                        description: AllowedDomains is the list of allowed email domains
+                        items:
+                          type: string
+                        type: array
+                      allowed_groups:
+                        description: AllowedGroups is the list of allowed groups
+                        items:
+                          type: string
+                        type: array
+                      allowed_users:
+                        description: AllowedUsers is the list of allowed email addresses
+                        items:
+                          type: string
+                        type: array
+                      client_id:
+                        description: ClientID is the OIDC client ID
+                        type: string
+                      client_secret:
+                        description: ClientSecret is the OIDC client secret
+                        type: string
+                      client_secret_path:
+                        description: ClientSecretPath is the path to the OIDC client
+                          secret file
+                        type: string
+                      expiry:
+                        default: 180d
+                        description: Expiry is the authentication expiry duration
+                        type: string
+                      extra_params:
+                        additionalProperties:
+                          type: string
+                        description: ExtraParams are additional parameters for the
+                          OIDC provider
+                        type: object
+                      issuer:
+                        description: Issuer is the OIDC issuer URL
+                        type: string
+                      only_start_if_oidc_is_available:
+                        default: true
+                        description: OnlyStartIfOIDCIsAvailable blocks startup until
+                          OIDC is available
+                        type: boolean
+                      pkce:
+                        description: PKCE configuration
+                        properties:
+                          enabled:
+                            default: false
+                            description: Enabled indicates if PKCE is enabled
+                            type: boolean
+                          method:
+                            default: S256
+                            description: Method is the PKCE method
+                            enum:
+                            - plain
+                            - S256
+                            type: string
+                        type: object
+                      scope:
+                        description: Scope is the list of OIDC scopes
+                        items:
+                          type: string
+                        type: array
+                      use_expiry_from_token:
+                        default: false
+                        description: UseExpiryFromToken uses the token expiry
+                        type: boolean
+                    type: object
+                  policy:
+                    description: Policy configuration
+                    properties:
+                      mode:
+                        default: file
+                        description: Mode is the policy mode
+                        enum:
+                        - file
+                        - database
+                        type: string
+                      path:
+                        description: Path is the path to the policy file
+                        type: string
+                    type: object
+                  prefixes:
+                    description: Prefixes configuration
+                    properties:
+                      allocation:
+                        default: sequential
+                        description: Allocation strategy for IPs
+                        enum:
+                        - sequential
+                        - random
+                        type: string
+                      v4:
+                        default: 100.64.0.0/10
+                        description: V4 is the IPv4 prefix for allocation
+                        pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$
+                        type: string
+                      v6:
+                        default: fd7a:115c:a1e0::/48
+                        description: V6 is the IPv6 prefix for allocation
+                        pattern: ^([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})/([0-9]{1,3})$
+                        type: string
+                    type: object
+                  randomize_client_port:
+                    default: false
+                    description: RandomizeClientPort randomizes the WireGuard client
+                      port
+                    type: boolean
+                  server_url:
+                    description: ServerURL is the URL clients will connect to
+                    format: url
+                    type: string
+                  tls_cert_path:
+                    description: TLSCertPath is the path to the TLS certificate
+                    type: string
+                  tls_key_path:
+                    description: TLSKeyPath is the path to the TLS key
+                    type: string
+                  tls_letsencrypt_cache_dir:
+                    default: /var/lib/headscale/cache
+                    description: TLSLetsEncryptCacheDir is the cache directory for
+                      Let's Encrypt
+                    type: string
+                  tls_letsencrypt_challenge_type:
+                    default: HTTP-01
+                    description: TLSLetsEncryptChallengeType is the ACME challenge
+                      type
+                    enum:
+                    - HTTP-01
+                    - TLS-ALPN-01
+                    type: string
+                  tls_letsencrypt_hostname:
+                    description: TLSLetsEncryptHostname is the hostname for Let's
+                      Encrypt
+                    type: string
+                  tls_letsencrypt_listen:
+                    default: :http
+                    description: TLSLetsEncryptListen is the address for Let's Encrypt
+                      challenge
+                    type: string
+                  unix_socket:
+                    default: /var/run/headscale/headscale.sock
+                    description: UnixSocket is the path to the Unix socket
+                    type: string
+                  unix_socket_permission:
+                    default: "0770"
+                    description: UnixSocketPermission is the Unix socket permission
+                      (e.g., "0770")
+                    type: string
+                required:
+                - server_url
+                type: object
+              replicas:
+                description: Replicas indicates the number of Headscale instances
+                  to deploy.
+                format: int32
+                minimum: 1
+                type: integer
+              version:
+                description: Version indicates the version of Headscale to deploy.
+                pattern: ^v?(\d+\.)?(\d+\.)?(\*|\d+)(-.+)?$
+                type: string
+            required:
+            - replicas
+            - version
+            type: object
+          status:
+            description: status defines the observed state of Headscale
+            properties:
+              conditions:
+                description: |-
+                  conditions represent the current state of the Headscale resource.
+                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
+
+                  Standard condition types include:
+                  - "Available": the resource is fully functional
+                  - "Progressing": the resource is being created or updated
+                  - "Degraded": the resource failed to reach or maintain its desired state
+
+                  The status of each condition is one of True, False, or Unknown.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
