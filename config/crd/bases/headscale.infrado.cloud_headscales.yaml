@@ -446,7 +446,6 @@ spec:
                     type: boolean
                   server_url:
                     description: ServerURL is the URL clients will connect to
-                    format: url
                     type: string
                   tls_cert_path:
                     description: TLSCertPath is the path to the TLS certificate

@@ -433,7 +433,7 @@ type LogTailConfig struct {
 // HeadscaleConfig represents the complete Headscale configuration
 type HeadscaleConfig struct {
 	// ServerURL is the URL clients will connect to
-	// +kubebuilder:validation:Format=url
+	// +required
 	ServerURL string `json:"server_url"`
 
 	// ListenAddr is the address to listen on
