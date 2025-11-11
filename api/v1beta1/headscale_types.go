@@ -301,6 +301,7 @@ type PolicyConfig struct {
 // DNSNameserversConfig represents DNS nameservers configuration
 type DNSNameserversConfig struct {
 	// Global nameservers
+	// +kubebuilder:default={"1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001"}
 	// +optional
 	Global []string `json:"global,omitempty"`
 

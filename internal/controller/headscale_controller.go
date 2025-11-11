@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strconv"
 	"strings"
@@ -177,7 +178,10 @@ func (r *HeadscaleReconciler) reconcileConfigMap(ctx context.Context, headscale 
 func (r *HeadscaleReconciler) reconcileStatefulSet(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
 	log := logf.FromContext(ctx)
 
-	statefulSet := r.statefulSetForHeadscale(headscale)
+	// Compute hash of the config spec directly from the Headscale CR
+	configHash := computeConfigHashFromSpec(&headscale.Spec.Config)
+
+	statefulSet := r.statefulSetForHeadscale(headscale, configHash)
 	if err := controllerutil.SetControllerReference(headscale, statefulSet, r.Scheme); err != nil {
 		return err
 	}
@@ -191,14 +195,16 @@ func (r *HeadscaleReconciler) reconcileStatefulSet(ctx context.Context, headscal
 		return fmt.Errorf("failed to get StatefulSet: %w", err)
 	}
 
-	// Update the StatefulSet if needed
-	if foundStatefulSet.Spec.Replicas == nil || *foundStatefulSet.Spec.Replicas != headscale.Spec.Replicas {
-		foundStatefulSet.Spec.Replicas = &headscale.Spec.Replicas
-		foundStatefulSet.Spec.Template = statefulSet.Spec.Template
-		log.Info("Updating StatefulSet", "Namespace", statefulSet.Namespace, "Name", statefulSet.Name)
-		return r.Update(ctx, foundStatefulSet)
-	}
-	return nil
+	// Always update the desired state - controller-runtime will only send the update if there are actual changes
+	// Note: We only update mutable fields. StatefulSet has immutable fields like Selector, ServiceName, and VolumeClaimTemplates
+	// that cannot be changed after creation. If those need to change, the StatefulSet must be deleted and recreated.
+	foundStatefulSet.Spec.Replicas = statefulSet.Spec.Replicas
+	foundStatefulSet.Spec.Template = statefulSet.Spec.Template
+	foundStatefulSet.Spec.UpdateStrategy = statefulSet.Spec.UpdateStrategy
+	foundStatefulSet.Spec.MinReadySeconds = statefulSet.Spec.MinReadySeconds
+
+	log.Info("Updating StatefulSet", "Namespace", statefulSet.Namespace, "Name", statefulSet.Name)
+	return r.Update(ctx, foundStatefulSet)
 }
 
 // reconcileService reconciles the Service for Headscale
@@ -295,8 +301,23 @@ func extractPort(addr string, defaultPort int32) int32 {
 	return int32(port)
 }
 
+// computeConfigHashFromSpec computes a SHA256 hash of the Headscale config spec
+func computeConfigHashFromSpec(config *headscalev1beta1.HeadscaleConfig) string {
+	// Marshal the config to YAML to get a consistent representation
+	configData, err := yaml.Marshal(config)
+	if err != nil {
+		// If marshaling fails, return empty string - the StatefulSet will still work
+		// but won't get automatic restarts on config changes
+		return ""
+	}
+
+	hash := sha256.New()
+	hash.Write(configData)
+	return fmt.Sprintf("%x", hash.Sum(nil))[:16]
+}
+
 // statefulSetForHeadscale returns a StatefulSet object for Headscale
-func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headscale) *appsv1.StatefulSet {
+func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headscale, configHash string) *appsv1.StatefulSet {
 	labels := labelsForHeadscale(h.Name)
 	replicas := h.Spec.Replicas
 
@@ -342,6 +363,9 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
+					Annotations: map[string]string{
+						"headscale.infrado.cloud/config-hash": configHash,
+					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
