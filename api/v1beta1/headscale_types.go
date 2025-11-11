@@ -620,6 +620,7 @@ type HeadscaleStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=hs
 
 // Headscale is the Schema for the headscales API
 type Headscale struct {

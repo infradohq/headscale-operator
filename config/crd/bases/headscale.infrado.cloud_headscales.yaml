@@ -11,6 +11,8 @@ spec:
     kind: Headscale
     listKind: HeadscaleList
     plural: headscales
+    shortNames:
+    - hs
     singular: headscale
   scope: Namespaced
   versions:
