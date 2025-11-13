@@ -645,6 +645,11 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: api_key.rotation_buffer must be less than api_key.expiration when
+            auto_manage is enabled
+          rule: '!has(self.spec.api_key.auto_manage) || self.spec.api_key.auto_manage
+            == false || (duration(self.spec.api_key.rotation_buffer) < duration(self.spec.api_key.expiration))'
     served: true
     storage: true
     subresources:
