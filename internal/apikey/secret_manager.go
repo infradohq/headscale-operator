@@ -99,7 +99,16 @@ func (sm *SecretManager) CreateOrUpdateSecret(ctx context.Context, secretName, a
 	// Update existing secret
 	existingSecret.Data = secret.Data
 	existingSecret.Labels = secret.Labels
-	existingSecret.Annotations = secret.Annotations
+
+	// Update annotations, but preserve the original creation timestamp
+	if existingSecret.Annotations == nil {
+		existingSecret.Annotations = make(map[string]string)
+	}
+	existingSecret.Annotations[AnnotationExpiration] = secret.Annotations[AnnotationExpiration]
+	// Only set creation timestamp if it doesn't exist
+	if _, exists := existingSecret.Annotations[AnnotationCreatedAt]; !exists {
+		existingSecret.Annotations[AnnotationCreatedAt] = secret.Annotations[AnnotationCreatedAt]
+	}
 	_, err = sm.clientset.CoreV1().Secrets(sm.namespace).Update(ctx, existingSecret, metav1.UpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to update secret: %w", err)
