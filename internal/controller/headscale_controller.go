@@ -26,7 +26,9 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -195,10 +197,13 @@ func (r *HeadscaleReconciler) reconcileConfigMap(ctx context.Context, headscale 
 		return fmt.Errorf("failed to get ConfigMap: %w", err)
 	}
 
-	// Update the ConfigMap if it exists
-	foundConfigMap.Data = configMap.Data
-	log.Info("Updating ConfigMap", "Namespace", configMap.Namespace, "Name", configMap.Name)
-	return r.Update(ctx, foundConfigMap)
+	// Update the ConfigMap only if data changed
+	if !equality.Semantic.DeepEqual(foundConfigMap.Data, configMap.Data) {
+		foundConfigMap.Data = configMap.Data
+		log.Info("Updating ConfigMap", "Namespace", configMap.Namespace, "Name", configMap.Name)
+		return r.Update(ctx, foundConfigMap)
+	}
+	return nil
 }
 
 // reconcileStatefulSet reconciles the StatefulSet for Headscale
@@ -222,13 +227,14 @@ func (r *HeadscaleReconciler) reconcileStatefulSet(ctx context.Context, headscal
 		return fmt.Errorf("failed to get StatefulSet: %w", err)
 	}
 
-	// Always update the desired state - controller-runtime will only send the update if there are actual changes
-	// Note: We only update mutable fields. StatefulSet has immutable fields like Selector, ServiceName, and VolumeClaimTemplates
-	// that cannot be changed after creation. If those need to change, the StatefulSet must be deleted and recreated.
-	foundStatefulSet.Spec.Replicas = statefulSet.Spec.Replicas
-	foundStatefulSet.Spec.Template = statefulSet.Spec.Template
-	foundStatefulSet.Spec.UpdateStrategy = statefulSet.Spec.UpdateStrategy
-	foundStatefulSet.Spec.MinReadySeconds = statefulSet.Spec.MinReadySeconds
+	// NOTE: for now we check the whole spec, including the immutable fields
+	// if we decided to change those fields later, we would need to change
+	// the logic here to avoid trying doing that.
+	if equality.Semantic.DeepEqual(foundStatefulSet.Spec, statefulSet.Spec) {
+		return nil
+	}
+
+	foundStatefulSet.Spec = statefulSet.Spec
 
 	log.Info("Updating StatefulSet", "Namespace", statefulSet.Namespace, "Name", statefulSet.Name)
 	return r.Update(ctx, foundStatefulSet)
@@ -312,10 +318,13 @@ func (r *HeadscaleReconciler) reconcileRole(ctx context.Context, headscale *head
 		return fmt.Errorf("failed to get Role: %w", err)
 	}
 
-	// Update the Role if it exists
-	foundRole.Rules = role.Rules
-	log.Info("Updating Role", "Namespace", role.Namespace, "Name", role.Name)
-	return r.Update(ctx, foundRole)
+	// Update the Role only if rules changed
+	if !equality.Semantic.DeepEqual(foundRole.Rules, role.Rules) {
+		foundRole.Rules = role.Rules
+		log.Info("Updating Role", "Namespace", role.Namespace, "Name", role.Name)
+		return r.Update(ctx, foundRole)
+	}
+	return nil
 }
 
 // reconcileRoleBinding reconciles the RoleBinding for Headscale pods
@@ -340,14 +349,31 @@ func (r *HeadscaleReconciler) reconcileRoleBinding(ctx context.Context, headscal
 
 // updateStatus updates the status of the Headscale instance
 func (r *HeadscaleReconciler) updateStatus(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	headscale.Status.Conditions = []metav1.Condition{
-		{
-			Type:               "Available",
-			Status:             metav1.ConditionTrue,
-			Reason:             "Reconciled",
-			Message:            "Headscale is running",
-			LastTransitionTime: metav1.Now(),
-		},
+	// Desired condition
+	desired := metav1.Condition{
+		Type:    "Available",
+		Status:  metav1.ConditionTrue,
+		Reason:  "Reconciled",
+		Message: "Headscale is running",
+	}
+
+	existing := meta.FindStatusCondition(headscale.Status.Conditions, desired.Type)
+	if existing != nil && existing.Status == desired.Status && existing.Reason == desired.Reason && existing.Message == desired.Message {
+		// No change needed; keep original LastTransitionTime
+		return nil
+	}
+
+	desired.LastTransitionTime = metav1.Now()
+	// Replace or append condition
+	if existing == nil {
+		headscale.Status.Conditions = append(headscale.Status.Conditions, desired)
+	} else {
+		for i := range headscale.Status.Conditions {
+			if headscale.Status.Conditions[i].Type == desired.Type {
+				headscale.Status.Conditions[i] = desired
+				break
+			}
+		}
 	}
 	return r.Status().Update(ctx, headscale)
 }
