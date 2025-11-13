@@ -64,7 +64,7 @@ spec:
     # Note: Use hours for days (24h = 1 day)
     expiration: "2160h"
     
-    # Time before expiration to rotate the key (default: "240h" = 10 days)
+    # Time before expiration to rotate the key (default: "1920h" = 80 days)
     # Must be less than expiration
     # Examples: "168h" (7 days), "240h" (10 days), "480h" (20 days)
     rotationBuffer: "240h"

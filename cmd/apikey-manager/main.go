@@ -43,8 +43,8 @@ func init() {
 	flag.StringVar(&socketPath, "socket-path", "/var/run/headscale/headscale.sock", "Path to Headscale Unix socket")
 	flag.StringVar(&namespace, "namespace", "", "Kubernetes namespace (required)")
 	flag.StringVar(&secretName, "secret-name", "headscale-api-key", "Name of the Kubernetes secret to store the API key")
-	flag.StringVar(&expiration, "expiration", "90d", "API key expiration duration (e.g., '90d', '1y')")
-	flag.StringVar(&rotationBuffer, "rotation-buffer", "80d", "Time before expiration to rotate the key (e.g., '7d')")
+	flag.StringVar(&expiration, "expiration", "2160h", "API key expiration duration (e.g., '2160h' for 90 days)")
+	flag.StringVar(&rotationBuffer, "rotation-buffer", "1920h", "Time before expiration to rotate the key (e.g., '168h' for 7 days, '240h' for 10 days)")
 }
 
 func main() {

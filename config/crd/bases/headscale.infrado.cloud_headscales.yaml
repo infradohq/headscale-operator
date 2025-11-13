@@ -58,9 +58,9 @@ spec:
                     pattern: ^([0-9]+(\.[0-9]+)?(s|m|h))+$
                     type: string
                   manager_image:
-                    description: |-
-                      ManagerImage is the container image to use for the API key manager sidecar
-                      If not specified, defaults to ghcr.io/infradohq/headscale-operator/apikey-manager with the same version tag as spec.version
+                    default: ghcr.io/infradohq/headscale-operator/apikey-manager:latest
+                    description: ManagerImage is the container image to use for the
+                      API key manager sidecar
                     type: string
                   rotation_buffer:
                     default: 1920h
