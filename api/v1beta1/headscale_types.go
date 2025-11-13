@@ -583,6 +583,7 @@ type APIKeyConfig struct {
 	// SecretName is the name of the Kubernetes secret to store the API key
 	// +kubebuilder:default="headscale-api-key"
 	// +optional
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	SecretName string `json:"secret_name,omitempty"`
 
 	// Expiration is the API key expiration duration in Go duration format (e.g., "2160h", "90d" is not valid, use "2160h" for 90 days)
