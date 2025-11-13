@@ -14,19 +14,19 @@ The API Key Manager:
 
 ```
 ┌─────────────────────────────────────────┐
-│           Headscale Pod                  │
-│                                          │
+│           Headscale Pod                 │
+│                                         │
 │  ┌──────────────┐    ┌───────────────┐  │
 │  │              │    │               │  │
 │  │  Headscale   │◄──►│  API Key      │  │
 │  │  Container   │    │  Manager      │  │
 │  │              │    │  Sidecar      │  │
 │  └──────────────┘    └───────────────┘  │
-│         │                    │           │
-│         │ Unix Socket        │           │
-│         └────────────────────┘           │
-│                              │           │
-└──────────────────────────────┼───────────┘
+│         │                    │          │
+│         │ Unix Socket        │          │
+│         └────────────────────┘          │
+│                              │          │
+└──────────────────────────────┼──────────┘
                                │
                                ▼
                     ┌──────────────────┐
@@ -114,11 +114,12 @@ metadata:
   labels:
     app.kubernetes.io/managed-by: headscale-operator
     app.kubernetes.io/component: api-key
+  annotations:
+    api-key.headscale.infrado.cloud/expiration: <RFC3339-timestamp>
+    api-key.headscale.infrado.cloud/created-at: <RFC3339-timestamp>
 type: Opaque
 data:
   api-key: <base64-encoded-api-key>
-  expiration: <base64-encoded-RFC3339-timestamp>
-  created-at: <base64-encoded-RFC3339-timestamp>
 ```
 
 ## Building
@@ -161,8 +162,8 @@ Look for messages like "Waiting for Headscale to be ready..."
 
 **Check rotation logic:**
 ```bash
-# View the secret
-kubectl get secret headscale-api-key -o jsonpath='{.data.expiration}' | base64 -d
+# View the expiration timestamp (stored in annotations)
+kubectl get secret headscale-api-key -o jsonpath='{.metadata.annotations.api-key\.headscale\.infrado\.cloud/expiration}'
 
 # Check sidecar logs
 kubectl logs <pod-name> -c apikey-manager
@@ -173,8 +174,8 @@ kubectl logs <pod-name> -c apikey-manager
 Ensure the ServiceAccount has the necessary RBAC permissions:
 
 ```bash
-kubectl auth can-i create secrets --as=system:serviceaccount:default:headscale-operator
-kubectl auth can-i update secrets --as=system:serviceaccount:default:headscale-operator
+kubectl auth can-i create secrets --as=system:serviceaccount:default:headscale
+kubectl auth can-i update secrets --as=system:serviceaccount:default:headscale
 ```
 
 ## Development
@@ -213,12 +214,3 @@ You can test the API key manager against a local Headscale instance:
 - API keys are stored in Kubernetes Secrets (consider using encrypted Secrets at rest)
 - Old API keys are immediately expired when rotation occurs
 - The sidecar uses a minimal distroless image for reduced attack surface
-
-## Future Enhancements
-
-Potential improvements:
-- Support for external secret management (Vault, AWS Secrets Manager, etc.)
-- Configurable rotation check interval
-- Metrics/Prometheus integration for monitoring key rotation
-- Alert on rotation failures
-- Support for multiple API keys with different permissions
