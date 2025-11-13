@@ -741,7 +741,12 @@ func (r *HeadscaleReconciler) roleForHeadscale(h *headscalev1beta1.Headscale) *r
 				APIGroups:     []string{""},
 				Resources:     []string{"secrets"},
 				ResourceNames: []string{secretName},
-				Verbs:         []string{"get", "list", "watch", "create", "update", "patch"},
+				Verbs:         []string{"get", "list", "watch", "update", "patch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"secrets"},
+				Verbs:     []string{"create"},
 			},
 		},
 	}
