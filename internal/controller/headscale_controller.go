@@ -25,12 +25,14 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -52,6 +54,9 @@ const (
 	statefulSetName    = "headscale"
 	serviceName        = "headscale"
 	metricsServiceName = "headscale-metrics"
+	serviceAccountName = "headscale"
+	roleName           = "headscale"
+	roleBindingName    = "headscale"
 )
 
 // +kubebuilder:rbac:groups=headscale.infrado.cloud,resources=headscales,verbs=get;list;watch;create;update;patch;delete
@@ -61,6 +66,10 @@ const (
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -86,6 +95,24 @@ func (r *HeadscaleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// Handle finalizer
 	if err := r.ensureFinalizer(ctx, headscale); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile ServiceAccount
+	if err := r.reconcileServiceAccount(ctx, headscale); err != nil {
+		log.Error(err, "Failed to reconcile ServiceAccount")
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile Role
+	if err := r.reconcileRole(ctx, headscale); err != nil {
+		log.Error(err, "Failed to reconcile Role")
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile RoleBinding
+	if err := r.reconcileRoleBinding(ctx, headscale); err != nil {
+		log.Error(err, "Failed to reconcile RoleBinding")
 		return ctrl.Result{}, err
 	}
 
@@ -247,6 +274,70 @@ func (r *HeadscaleReconciler) reconcileMetricsService(ctx context.Context, heads
 	return nil
 }
 
+// reconcileServiceAccount reconciles the ServiceAccount for Headscale pods
+func (r *HeadscaleReconciler) reconcileServiceAccount(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
+	log := logf.FromContext(ctx)
+
+	sa := r.serviceAccountForHeadscale(headscale)
+	if err := controllerutil.SetControllerReference(headscale, sa, r.Scheme); err != nil {
+		return err
+	}
+
+	foundSA := &corev1.ServiceAccount{}
+	err := r.Get(ctx, types.NamespacedName{Name: sa.Name, Namespace: sa.Namespace}, foundSA)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating ServiceAccount", "Namespace", sa.Namespace, "Name", sa.Name)
+		return r.Create(ctx, sa)
+	} else if err != nil {
+		return fmt.Errorf("failed to get ServiceAccount: %w", err)
+	}
+	return nil
+}
+
+// reconcileRole reconciles the Role for Headscale pods
+func (r *HeadscaleReconciler) reconcileRole(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
+	log := logf.FromContext(ctx)
+
+	role := r.roleForHeadscale(headscale)
+	if err := controllerutil.SetControllerReference(headscale, role, r.Scheme); err != nil {
+		return err
+	}
+
+	foundRole := &rbacv1.Role{}
+	err := r.Get(ctx, types.NamespacedName{Name: role.Name, Namespace: role.Namespace}, foundRole)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating Role", "Namespace", role.Namespace, "Name", role.Name)
+		return r.Create(ctx, role)
+	} else if err != nil {
+		return fmt.Errorf("failed to get Role: %w", err)
+	}
+
+	// Update the Role if it exists
+	foundRole.Rules = role.Rules
+	log.Info("Updating Role", "Namespace", role.Namespace, "Name", role.Name)
+	return r.Update(ctx, foundRole)
+}
+
+// reconcileRoleBinding reconciles the RoleBinding for Headscale pods
+func (r *HeadscaleReconciler) reconcileRoleBinding(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
+	log := logf.FromContext(ctx)
+
+	rb := r.roleBindingForHeadscale(headscale)
+	if err := controllerutil.SetControllerReference(headscale, rb, r.Scheme); err != nil {
+		return err
+	}
+
+	foundRB := &rbacv1.RoleBinding{}
+	err := r.Get(ctx, types.NamespacedName{Name: rb.Name, Namespace: rb.Namespace}, foundRB)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating RoleBinding", "Namespace", rb.Namespace, "Name", rb.Name)
+		return r.Create(ctx, rb)
+	} else if err != nil {
+		return fmt.Errorf("failed to get RoleBinding: %w", err)
+	}
+	return nil
+}
+
 // updateStatus updates the status of the Headscale instance
 func (r *HeadscaleReconciler) updateStatus(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
 	headscale.Status.Conditions = []metav1.Condition{
@@ -348,6 +439,138 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 		StorageClassName: h.Spec.PersistentVolumeClaim.StorageClassName,
 	}
 
+	// Build container list starting with Headscale
+	containers := []corev1.Container{
+		{
+			Name:            "headscale",
+			Image:           image,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command: []string{
+				"headscale",
+				"serve",
+			},
+			Ports: []corev1.ContainerPort{
+				{
+					Name:          "http",
+					ContainerPort: httpPort,
+					Protocol:      corev1.ProtocolTCP,
+				},
+				{
+					Name:          "metrics",
+					ContainerPort: metricsPort,
+					Protocol:      corev1.ProtocolTCP,
+				},
+				{
+					Name:          "grpc",
+					ContainerPort: grpcPort,
+					Protocol:      corev1.ProtocolTCP,
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "config",
+					MountPath: "/etc/headscale",
+					ReadOnly:  true,
+				},
+				{
+					Name:      "data",
+					MountPath: "/var/lib/headscale",
+				},
+			},
+			LivenessProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Path: "/health",
+						Port: intstr.FromInt32(httpPort),
+					},
+				},
+				InitialDelaySeconds: 30,
+				PeriodSeconds:       10,
+			},
+			ReadinessProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Path: "/health",
+						Port: intstr.FromInt32(httpPort),
+					},
+				},
+				InitialDelaySeconds: 5,
+				PeriodSeconds:       5,
+			},
+		},
+	}
+
+	// Build volumes list
+	volumes := []corev1.Volume{
+		{
+			Name: "config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: configMapName,
+					},
+				},
+			},
+		},
+	}
+
+	// Add API key manager sidecar if auto_manage is enabled
+	autoManage := true // default value
+	if h.Spec.APIKey.AutoManage != nil {
+		autoManage = *h.Spec.APIKey.AutoManage
+	}
+
+	if autoManage {
+		// Add socket volume for communication between Headscale and API key manager
+		volumes = append(volumes, corev1.Volume{
+			Name: "socket",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		})
+
+		// Update Headscale container to mount the socket volume
+		containers[0].VolumeMounts = append(containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "socket",
+			MountPath: "/var/run/headscale",
+		})
+
+		// Determine the API key manager image to use
+		managerImage := fmt.Sprintf("ghcr.io/infradohq/headscale-operator/apikey-manager:%s", h.Spec.Version)
+		if h.Spec.APIKey.ManagerImage != "" {
+			managerImage = h.Spec.APIKey.ManagerImage
+		}
+
+		// Add API key manager sidecar
+		containers = append(containers, corev1.Container{
+			Name:            "apikey-manager",
+			Image:           managerImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Args: []string{
+				"--socket-path=" + h.Spec.Config.UnixSocket,
+				"--secret-name=" + h.Spec.APIKey.SecretName,
+				"--expiration=" + h.Spec.APIKey.Expiration,
+				"--rotation-buffer=" + h.Spec.APIKey.RotationBuffer,
+			},
+			Env: []corev1.EnvVar{
+				{
+					Name: "POD_NAMESPACE",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "metadata.namespace",
+						},
+					},
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "socket",
+					MountPath: "/var/run/headscale",
+				},
+			},
+		})
+	}
+
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      statefulSetName,
@@ -368,76 +591,15 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 					},
 				},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "headscale",
-							Image: image,
-							Command: []string{
-								"headscale",
-								"serve",
-							},
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "http",
-									ContainerPort: httpPort,
-									Protocol:      corev1.ProtocolTCP,
-								},
-								{
-									Name:          "metrics",
-									ContainerPort: metricsPort,
-									Protocol:      corev1.ProtocolTCP,
-								},
-								{
-									Name:          "grpc",
-									ContainerPort: grpcPort,
-									Protocol:      corev1.ProtocolTCP,
-								},
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "config",
-									MountPath: "/etc/headscale",
-									ReadOnly:  true,
-								},
-								{
-									Name:      "data",
-									MountPath: "/var/lib/headscale",
-								},
-							},
-							LivenessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/health",
-										Port: intstr.FromInt32(httpPort),
-									},
-								},
-								InitialDelaySeconds: 30,
-								PeriodSeconds:       10,
-							},
-							ReadinessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/health",
-										Port: intstr.FromInt32(httpPort),
-									},
-								},
-								InitialDelaySeconds: 5,
-								PeriodSeconds:       5,
-							},
-						},
+					ServiceAccountName: serviceAccountName,
+					SecurityContext: &corev1.PodSecurityContext{
+						RunAsUser:    ptr.To(int64(65532)),
+						RunAsGroup:   ptr.To(int64(65532)),
+						FSGroup:      ptr.To(int64(65532)),
+						RunAsNonRoot: ptr.To(true),
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "config",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: configMapName,
-									},
-								},
-							},
-						},
-					},
+					Containers: containers,
+					Volumes:    volumes,
 				},
 			},
 			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
@@ -515,6 +677,58 @@ func (r *HeadscaleReconciler) metricsServiceForHeadscale(h *headscalev1beta1.Hea
 	}
 }
 
+// serviceAccountForHeadscale returns a ServiceAccount object for Headscale pods
+func (r *HeadscaleReconciler) serviceAccountForHeadscale(h *headscalev1beta1.Headscale) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serviceAccountName,
+			Namespace: h.Namespace,
+			Labels:    labelsForHeadscale(h.Name),
+		},
+	}
+}
+
+// roleForHeadscale returns a Role object for Headscale pods with permissions to manage Secrets
+func (r *HeadscaleReconciler) roleForHeadscale(h *headscalev1beta1.Headscale) *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      roleName,
+			Namespace: h.Namespace,
+			Labels:    labelsForHeadscale(h.Name),
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"secrets"},
+				Verbs:     []string{"get", "list", "watch", "create", "update", "patch"},
+			},
+		},
+	}
+}
+
+// roleBindingForHeadscale returns a RoleBinding object for Headscale pods
+func (r *HeadscaleReconciler) roleBindingForHeadscale(h *headscalev1beta1.Headscale) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      roleBindingName,
+			Namespace: h.Namespace,
+			Labels:    labelsForHeadscale(h.Name),
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     roleName,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      serviceAccountName,
+				Namespace: h.Namespace,
+			},
+		},
+	}
+}
+
 // labelsForHeadscale returns the labels for selecting the resources
 func labelsForHeadscale(name string) map[string]string {
 	return map[string]string{
@@ -531,6 +745,9 @@ func (r *HeadscaleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.ConfigMap{}).
+		Owns(&corev1.ServiceAccount{}).
+		Owns(&rbacv1.Role{}).
+		Owns(&rbacv1.RoleBinding{}).
 		Named("headscale").
 		Complete(r)
 }

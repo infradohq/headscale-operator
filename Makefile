@@ -1,5 +1,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
+# API Key Manager image
+APIKEY_MANAGER_IMG ?= apikey-manager:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -108,6 +110,13 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
+.PHONY: build-apikey-manager
+build-apikey-manager: ## Build API key manager binary.
+	go build -o bin/apikey-manager cmd/apikey-manager/main.go
+
+.PHONY: build-all
+build-all: build build-apikey-manager ## Build all binaries.
+
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
@@ -119,9 +128,23 @@ run: manifests generate fmt vet ## Run a controller from your host.
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build -t ${IMG} .
 
+.PHONY: docker-build-apikey-manager
+docker-build-apikey-manager: ## Build docker image with the API key manager.
+	$(CONTAINER_TOOL) build -f Dockerfile.apikey-manager -t ${APIKEY_MANAGER_IMG} .
+
+.PHONY: docker-build-all
+docker-build-all: docker-build docker-build-apikey-manager ## Build all docker images.
+
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
+
+.PHONY: docker-push-apikey-manager
+docker-push-apikey-manager: ## Push docker image with the API key manager.
+	$(CONTAINER_TOOL) push ${APIKEY_MANAGER_IMG}
+
+.PHONY: docker-push-all
+docker-push-all: docker-push docker-push-apikey-manager ## Push all docker images.
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:

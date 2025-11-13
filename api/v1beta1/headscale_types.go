@@ -550,6 +550,7 @@ type HeadscaleConfig struct {
 
 	// UnixSocket is the path to the Unix socket
 	// +kubebuilder:default="/var/run/headscale/headscale.sock"
+	// +kubebuilder:validation:MinLength=1
 	// +optional
 	UnixSocket string `json:"unix_socket,omitempty"`
 
@@ -570,6 +571,40 @@ type HeadscaleConfig struct {
 	// +kubebuilder:default=false
 	// +optional
 	RandomizeClientPort *bool `json:"randomize_client_port,omitempty"`
+}
+
+// APIKeyConfig represents API key management configuration
+type APIKeyConfig struct {
+	// AutoManage enables automatic API key creation and rotation
+	// +kubebuilder:default=true
+	// +optional
+	AutoManage *bool `json:"auto_manage,omitempty"`
+
+	// SecretName is the name of the Kubernetes secret to store the API key
+	// +kubebuilder:default="headscale-api-key"
+	// +optional
+	SecretName string `json:"secret_name,omitempty"`
+
+	// Expiration is the API key expiration duration in Go duration format (e.g., "2160h", "90d" is not valid, use "2160h" for 90 days)
+	// The API key will be rotated before it expires
+	// Examples: "720h" (30 days), "2160h" (90 days), "8760h" (365 days)
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))+$`
+	// +kubebuilder:default="2160h"
+	// +optional
+	Expiration string `json:"expiration,omitempty"`
+
+	// RotationBuffer is the time before expiration to rotate the key in Go duration format (e.g., "168h" for 7 days)
+	// Key will be rotated when it has less than this time remaining
+	// Examples: "168h" (7 days), "1920h" (80 days)
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(s|m|h))+$`
+	// +kubebuilder:default="1920h"
+	// +optional
+	RotationBuffer string `json:"rotation_buffer,omitempty"`
+
+	// ManagerImage is the container image to use for the API key manager sidecar
+	// If not specified, defaults to ghcr.io/infradohq/headscale-operator/apikey-manager with the same version tag as spec.version
+	// +optional
+	ManagerImage string `json:"manager_image,omitempty"`
 }
 
 // HeadscaleSpec defines the desired state of Headscale
@@ -597,6 +632,10 @@ type HeadscaleSpec struct {
 	// PersistentVolumeClaim configuration for data storage
 	// +optional
 	PersistentVolumeClaim PersistentVolumeClaimConfig `json:"persistent_volume_claim"`
+
+	// APIKey configuration for automatic API key management
+	// +optional
+	APIKey APIKeyConfig `json:"api_key"`
 }
 
 // HeadscaleStatus defines the observed state of Headscale.

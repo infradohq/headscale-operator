@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: headscale-sample
 spec:
-  version: "v0.27.0"
+  version: "v0.27.1"
   replicas: 1
   config:
     server_url: http://vpn.headscale.local
@@ -19,3 +19,9 @@ spec:
       type: sqlite
     dns:
       magic_dns: false
+  # API Key management configuration
+  api_key:
+    auto_manage: true
+    manager_image: apikey-manager
+    expiration: "2160h"      # 90 days (90 * 24h)
+    rotation_buffer: "240h"   # 10 days (10 * 24h)

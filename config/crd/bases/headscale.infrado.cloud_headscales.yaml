@@ -41,6 +41,41 @@ spec:
           spec:
             description: spec defines the desired state of Headscale
             properties:
+              api_key:
+                description: APIKey configuration for automatic API key management
+                properties:
+                  auto_manage:
+                    default: true
+                    description: AutoManage enables automatic API key creation and
+                      rotation
+                    type: boolean
+                  expiration:
+                    default: 2160h
+                    description: |-
+                      Expiration is the API key expiration duration in Go duration format (e.g., "2160h", "90d" is not valid, use "2160h" for 90 days)
+                      The API key will be rotated before it expires
+                      Examples: "720h" (30 days), "2160h" (90 days), "8760h" (365 days)
+                    pattern: ^([0-9]+(\.[0-9]+)?(s|m|h))+$
+                    type: string
+                  manager_image:
+                    description: |-
+                      ManagerImage is the container image to use for the API key manager sidecar
+                      If not specified, defaults to ghcr.io/infradohq/headscale-operator/apikey-manager with the same version tag as spec.version
+                    type: string
+                  rotation_buffer:
+                    default: 1920h
+                    description: |-
+                      RotationBuffer is the time before expiration to rotate the key in Go duration format (e.g., "168h" for 7 days)
+                      Key will be rotated when it has less than this time remaining
+                      Examples: "168h" (7 days), "1920h" (80 days)
+                    pattern: ^([0-9]+(\.[0-9]+)?(s|m|h))+$
+                    type: string
+                  secret_name:
+                    default: headscale-api-key
+                    description: SecretName is the name of the Kubernetes secret to
+                      store the API key
+                    type: string
+                type: object
               config:
                 description: Config holds custom configuration for Headscale.
                 properties:
@@ -489,6 +524,7 @@ spec:
                   unix_socket:
                     default: /var/run/headscale/headscale.sock
                     description: UnixSocket is the path to the Unix socket
+                    minLength: 1
                     type: string
                   unix_socket_permission:
                     default: "0770"

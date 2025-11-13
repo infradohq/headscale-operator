@@ -10,6 +10,7 @@ The Headscale Operator simplifies the deployment and management of Headscale ins
 
 - **Declarative Configuration**: Define your entire Headscale configuration as a Kubernetes CR
 - **Automatic Deployment**: Manages StatefulSet, Services, ConfigMaps, and PersistentVolumes
+- **API Key Management**: Automatic API key creation and rotation for seamless integration
 - **Full Config Support**: Supports all Headscale configuration options including:
   - Database configuration (SQLite/PostgreSQL)
   - DERP server configuration
@@ -78,6 +79,12 @@ spec:
       type: sqlite
     dns:
       magic_dns: false
+  # Automatic API key management (optional)
+  apiKey:
+    autoManage: true        # Automatically create and rotate API keys
+    secretName: headscale-api-key
+    expiration: "2160h"     # API key expires in 90 days (2160 hours)
+    rotationBuffer: "240h"  # Rotate 10 days (240 hours) before expiration
 ```
 
 Apply the configuration:
@@ -97,6 +104,27 @@ The operator will automatically create:
 - A ConfigMap with the Headscale configuration
 - Services for HTTP, gRPC, and metrics endpoints
 - PersistentVolumeClaims for data storage
+- API key management sidecar (if enabled)
+- Kubernetes Secret with the API key (if auto-managed)
+
+### Accessing the API Key
+
+When API key auto-management is enabled, the operator creates a Kubernetes Secret containing the API key:
+
+```sh
+# Get the API key
+kubectl get secret headscale-api-key -n headscale -o jsonpath='{.data.api-key}' | base64 -d
+
+# View full secret details
+kubectl get secret headscale-api-key -n headscale -o yaml
+```
+
+The secret contains:
+- `api-key`: The actual API key for authenticating with Headscale
+- `expiration`: When the API key will expire (RFC3339 format)
+- `created-at`: When the API key was created (RFC3339 format)
+
+For more details on API key management, see [cmd/apikey-manager/README.md](cmd/apikey-manager/README.md).
 
 ### To Uninstall
 **Delete the instances (CRs) from the cluster:**
