@@ -661,7 +661,7 @@ type HeadscaleStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=hs
-// +kubebuilder:validation:XValidation:rule="!has(self.spec.api_key.auto_manage) || self.spec.api_key.auto_manage == false || (duration(self.spec.api_key.rotation_buffer) < duration(self.spec.api_key.expiration))",message="api_key.rotation_buffer must be less than api_key.expiration when auto_manage is enabled"
+// +kubebuilder:validation:XValidation:rule="!has(self.spec.api_key.rotation_buffer) || !has(self.spec.api_key.expiration) || duration(self.spec.api_key.rotation_buffer) < duration(self.spec.api_key.expiration)",message="api_key.rotation_buffer must be less than api_key.expiration"
 
 // Headscale is the Schema for the headscales API
 type Headscale struct {
