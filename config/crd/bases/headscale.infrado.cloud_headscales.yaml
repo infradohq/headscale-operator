@@ -74,6 +74,7 @@ spec:
                     default: headscale-api-key
                     description: SecretName is the name of the Kubernetes secret to
                       store the API key
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                     type: string
                 type: object
               config:

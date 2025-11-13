@@ -297,6 +297,13 @@ func (r *HeadscaleReconciler) reconcileServiceAccount(ctx context.Context, heads
 	} else if err != nil {
 		return fmt.Errorf("failed to get ServiceAccount: %w", err)
 	}
+
+	// Update the ServiceAccount only if labels changed
+	if !equality.Semantic.DeepEqual(foundSA.Labels, sa.Labels) {
+		foundSA.Labels = sa.Labels
+		log.Info("Updating ServiceAccount", "Namespace", sa.Namespace, "Name", sa.Name)
+		return r.Update(ctx, foundSA)
+	}
 	return nil
 }
 
