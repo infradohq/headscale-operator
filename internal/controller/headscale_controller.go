@@ -536,7 +536,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 		})
 
 		// Determine the API key manager image to use
-		managerImage := fmt.Sprintf("ghcr.io/infradohq/headscale-operator/apikey-manager:%s", h.Spec.Version)
+		managerImage := "ghcr.io/infradohq/headscale-operator/apikey-manager:latest"
 		if h.Spec.APIKey.ManagerImage != "" {
 			managerImage = h.Spec.APIKey.ManagerImage
 		}

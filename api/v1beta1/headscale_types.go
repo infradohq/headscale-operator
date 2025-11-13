@@ -602,7 +602,7 @@ type APIKeyConfig struct {
 	RotationBuffer string `json:"rotation_buffer,omitempty"`
 
 	// ManagerImage is the container image to use for the API key manager sidecar
-	// If not specified, defaults to ghcr.io/infradohq/headscale-operator/apikey-manager with the same version tag as spec.version
+	// +kubebuilder:default="ghcr.io/infradohq/headscale-operator/apikey-manager:latest"
 	// +optional
 	ManagerImage string `json:"manager_image,omitempty"`
 }

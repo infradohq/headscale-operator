@@ -7,6 +7,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  APIKEY_MANAGER_IMAGE_NAME: ${{ github.repository }}/apikey-manager
 
 jobs:
   docker:
@@ -42,3 +43,22 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+
+    - name: Extract metadata for apikey-manager
+      id: meta-apikey
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.APIKEY_MANAGER_IMAGE_NAME }}
+        tags: |
+          type=semver,pattern={{raw}}
+          type=semver,pattern=v{{major}}.{{minor}}
+          type=raw,value=latest
+
+    - name: Build and push apikey-manager Docker image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: ./Dockerfile.apikey-manager
+        push: true
+        tags: ${{ steps.meta-apikey.outputs.tags }}
+        labels: ${{ steps.meta-apikey.outputs.labels }}
