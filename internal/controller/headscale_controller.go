@@ -344,6 +344,14 @@ func (r *HeadscaleReconciler) reconcileRoleBinding(ctx context.Context, headscal
 	} else if err != nil {
 		return fmt.Errorf("failed to get RoleBinding: %w", err)
 	}
+
+	// Update the RoleBinding only if subjects or roleRef changed
+	if !equality.Semantic.DeepEqual(foundRB.Subjects, rb.Subjects) || !equality.Semantic.DeepEqual(foundRB.RoleRef, rb.RoleRef) {
+		foundRB.Subjects = rb.Subjects
+		foundRB.RoleRef = rb.RoleRef
+		log.Info("Updating RoleBinding", "Namespace", rb.Namespace, "Name", rb.Name)
+		return r.Update(ctx, foundRB)
+	}
 	return nil
 }
 
