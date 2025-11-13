@@ -100,22 +100,25 @@ func (r *HeadscaleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile ServiceAccount
-	if err := r.reconcileServiceAccount(ctx, headscale); err != nil {
-		log.Error(err, "Failed to reconcile ServiceAccount")
-		return ctrl.Result{}, err
-	}
+	// Reconcile RBAC resources only if APIKey.AutoManage is true or nil (default true)
+	if headscale.Spec.APIKey.AutoManage == nil || *headscale.Spec.APIKey.AutoManage {
+		// Reconcile ServiceAccount
+		if err := r.reconcileServiceAccount(ctx, headscale); err != nil {
+			log.Error(err, "Failed to reconcile ServiceAccount")
+			return ctrl.Result{}, err
+		}
 
-	// Reconcile Role
-	if err := r.reconcileRole(ctx, headscale); err != nil {
-		log.Error(err, "Failed to reconcile Role")
-		return ctrl.Result{}, err
-	}
+		// Reconcile Role
+		if err := r.reconcileRole(ctx, headscale); err != nil {
+			log.Error(err, "Failed to reconcile Role")
+			return ctrl.Result{}, err
+		}
 
-	// Reconcile RoleBinding
-	if err := r.reconcileRoleBinding(ctx, headscale); err != nil {
-		log.Error(err, "Failed to reconcile RoleBinding")
-		return ctrl.Result{}, err
+		// Reconcile RoleBinding
+		if err := r.reconcileRoleBinding(ctx, headscale); err != nil {
+			log.Error(err, "Failed to reconcile RoleBinding")
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Reconcile ConfigMap
