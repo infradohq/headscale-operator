@@ -724,6 +724,12 @@ func (r *HeadscaleReconciler) serviceAccountForHeadscale(h *headscalev1beta1.Hea
 
 // roleForHeadscale returns a Role object for Headscale pods with permissions to manage Secrets
 func (r *HeadscaleReconciler) roleForHeadscale(h *headscalev1beta1.Headscale) *rbacv1.Role {
+	// Determine the API key secret name from the spec, with fallback to default
+	secretName := h.Spec.APIKey.SecretName
+	if secretName == "" {
+		secretName = "headscale-api-key"
+	}
+
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      roleName,
@@ -732,9 +738,10 @@ func (r *HeadscaleReconciler) roleForHeadscale(h *headscalev1beta1.Headscale) *r
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
-				APIGroups: []string{""},
-				Resources: []string{"secrets"},
-				Verbs:     []string{"get", "list", "watch", "create", "update", "patch"},
+				APIGroups:     []string{""},
+				Resources:     []string{"secrets"},
+				ResourceNames: []string{secretName},
+				Verbs:         []string{"get", "list", "watch", "create", "update", "patch"},
 			},
 		},
 	}
