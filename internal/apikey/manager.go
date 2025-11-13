@@ -153,7 +153,11 @@ func (m *Manager) rotateAPIKey(ctx context.Context) error {
 	secret, err := m.secretManager.GetSecret(ctx, m.secretName)
 	var oldAPIKey string
 	if err == nil {
-		oldAPIKey, _ = GetAPIKeyFromSecret(secret)
+		var extractErr error
+		oldAPIKey, extractErr = GetAPIKeyFromSecret(secret)
+		if extractErr != nil {
+			m.log.Info("Could not extract old API key from secret, will skip expiration", "error", extractErr)
+		}
 	}
 
 	// Create new API key
