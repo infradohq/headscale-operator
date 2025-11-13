@@ -121,7 +121,7 @@ func (sm *SecretManager) CreateOrUpdateSecret(ctx context.Context, secretName, a
 func (sm *SecretManager) GetSecret(ctx context.Context, secretName string) (*corev1.Secret, error) {
 	secret, err := sm.clientset.CoreV1().Secrets(sm.namespace).Get(ctx, secretName, metav1.GetOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get secret: %w", err)
+		return nil, fmt.Errorf("failed to get secret %s: %w", secretName, err)
 	}
 	return secret, nil
 }
