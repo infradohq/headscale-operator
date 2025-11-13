@@ -66,7 +66,7 @@ func main() {
 		// Try to get namespace from environment variable (set by Kubernetes downward API)
 		namespace = os.Getenv("POD_NAMESPACE")
 		if namespace == "" {
-			log.Error(nil, "namespace is required (use --namespace flag or POD_NAMESPACE env var)")
+			log.Error(nil, "namespace is required: use --namespace flag or ensure POD_NAMESPACE environment variable is set by the Kubernetes downward API")
 			os.Exit(1)
 		}
 	}
