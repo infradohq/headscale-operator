@@ -409,13 +409,13 @@ func (r *HeadscalePreAuthKeyReconciler) createPreAuthKey(
 	}
 
 	// Get the API key from the secret
-	apiKey, err := r.getAPIKey(ctx, headscale)
+	apiKey, err := getAPIKey(ctx, r.Client, headscale)
 	if err != nil {
 		return fmt.Errorf("failed to get API key: %w", err)
 	}
 
 	// Get the gRPC service address
-	serviceAddr := r.getGRPCServiceAddress(headscale)
+	serviceAddr := getGRPCServiceAddress(headscale)
 
 	// Create Headscale client with API key
 	hsClient, err := hsclient.NewClientWithAPIKey(serviceAddr, apiKey)
@@ -498,13 +498,13 @@ func (r *HeadscalePreAuthKeyReconciler) expirePreAuthKey(
 	log := logf.FromContext(ctx)
 
 	// Get the API key from the secret
-	apiKey, err := r.getAPIKey(ctx, headscale)
+	apiKey, err := getAPIKey(ctx, r.Client, headscale)
 	if err != nil {
 		return fmt.Errorf("failed to get API key: %w", err)
 	}
 
 	// Get the gRPC service address
-	serviceAddr := r.getGRPCServiceAddress(headscale)
+	serviceAddr := getGRPCServiceAddress(headscale)
 
 	// Create Headscale client with API key
 	hsClient, err := hsclient.NewClientWithAPIKey(serviceAddr, apiKey)
@@ -593,47 +593,6 @@ func (r *HeadscalePreAuthKeyReconciler) deleteSecret(
 	}
 
 	return nil
-}
-
-// getAPIKey retrieves the API key from the secret created by the apikey-manager sidecar
-func (r *HeadscalePreAuthKeyReconciler) getAPIKey(
-	ctx context.Context,
-	headscale *headscalev1beta1.Headscale,
-) (string, error) {
-	// Get the secret name from the Headscale spec
-	secretName := headscale.Spec.APIKey.SecretName
-	if secretName == "" {
-		secretName = defaultAPIKeySecretName
-	}
-
-	// Get the secret
-	secret := &corev1.Secret{}
-	err := r.Get(ctx, types.NamespacedName{
-		Name:      secretName,
-		Namespace: headscale.Namespace,
-	}, secret)
-	if err != nil {
-		return "", fmt.Errorf("failed to get API key secret: %w", err)
-	}
-
-	// Get the API key from the secret data
-	apiKeyBytes, ok := secret.Data["api-key"]
-	if !ok {
-		return "", fmt.Errorf("api-key not found in secret %s", secretName)
-	}
-
-	return string(apiKeyBytes), nil
-}
-
-// getGRPCServiceAddress returns the gRPC service address for the Headscale instance
-func (r *HeadscalePreAuthKeyReconciler) getGRPCServiceAddress(
-	headscale *headscalev1beta1.Headscale,
-) string {
-	// Extract the gRPC port from the configuration
-	grpcPort := extractPort(headscale.Spec.Config.GRPCListenAddr, 50443)
-
-	// Return the service address and let Kubernetes DNS search domain handle the rest
-	return fmt.Sprintf("%s.%s.svc:%d", serviceName, headscale.Namespace, grpcPort)
 }
 
 // parseExpiration parses a duration string (e.g., "30m", "24h", "7d")
