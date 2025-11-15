@@ -68,8 +68,8 @@ spec:
                 default: 1h
                 description: |-
                   Expiration is the duration after which the preauth key expires
-                  Examples: 30m, 24h
-                pattern: ^[0-9]+[mh]$
+                  Examples: 30m, 24h, 1h30m (compound durations allowed; must be a valid Go duration string with hours and/or minutes)
+                pattern: ^([0-9]+h)?([0-9]+m)?$
                 type: string
               headscaleRef:
                 description: HeadscaleRef is the name of the Headscale instance to

@@ -15,7 +15,7 @@ spec:
   # Alternatively, you can specify the user ID directly:
   # userId: 1
   
-  # Expiration duration (e.g., "1h", "7d", "30d")
+  # Expiration duration (e.g., "1h")
   expiration: "24h"
   
   # Make the key reusable (can be used multiple times)
