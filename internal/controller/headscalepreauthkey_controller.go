@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -380,9 +381,14 @@ func (r *HeadscalePreAuthKeyReconciler) ensureHeadscaleUserOwnerReference(
 	// Create owner reference with blockOwnerDeletion=true
 	// This ensures PreAuthKey is deleted (and key expired) before HeadscaleUser is fully removed
 	blockOwnerDeletion := true
+	gvk, err := apiutil.GVKForObject(headscaleUser, r.Scheme)
+	if err != nil {
+		return fmt.Errorf("failed to get GVK for HeadscaleUser: %w", err)
+	}
+
 	ownerRef := metav1.OwnerReference{
-		APIVersion:         headscaleUser.APIVersion,
-		Kind:               headscaleUser.Kind,
+		APIVersion:         gvk.GroupVersion().String(),
+		Kind:               gvk.Kind,
 		Name:               headscaleUser.Name,
 		UID:                headscaleUser.UID,
 		BlockOwnerDeletion: &blockOwnerDeletion,
@@ -472,8 +478,16 @@ func (r *HeadscalePreAuthKeyReconciler) createPreAuthKey(
 		if !apierrors.IsAlreadyExists(err) {
 			return fmt.Errorf("failed to create secret: %w", err)
 		}
-		// Update existing secret
-		if err := r.Update(ctx, secret); err != nil {
+		// Get the existing secret first
+		existingSecret := &corev1.Secret{}
+		if err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: preAuthKey.Namespace}, existingSecret); err != nil {
+			return fmt.Errorf("failed to get existing secret: %w", err)
+		}
+		// Update the data
+		existingSecret.StringData = map[string]string{
+			preAuthKeySecretKey: key.GetKey(),
+		}
+		if err := r.Update(ctx, existingSecret); err != nil {
 			return fmt.Errorf("failed to update secret: %w", err)
 		}
 	}
