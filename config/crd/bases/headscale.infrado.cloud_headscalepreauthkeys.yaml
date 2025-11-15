@@ -68,8 +68,8 @@ spec:
                 default: 1h
                 description: |-
                   Expiration is the duration after which the preauth key expires
-                  Examples: 30m, 24h, 7d
-                pattern: ^[0-9]+[mhd]$
+                  Examples: 30m, 24h
+                pattern: ^[0-9]+[mh]$
                 type: string
               headscaleRef:
                 description: HeadscaleRef is the name of the Headscale instance to

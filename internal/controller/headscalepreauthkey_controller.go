@@ -409,7 +409,7 @@ func (r *HeadscalePreAuthKeyReconciler) createPreAuthKey(
 	log := logf.FromContext(ctx)
 
 	// Parse expiration duration
-	expiration, err := parseExpiration(preAuthKey.Spec.Expiration)
+	expiration, err := time.ParseDuration(preAuthKey.Spec.Expiration)
 	if err != nil {
 		return fmt.Errorf("failed to parse expiration: %w", err)
 	}
@@ -483,10 +483,11 @@ func (r *HeadscalePreAuthKeyReconciler) createPreAuthKey(
 		if err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: preAuthKey.Namespace}, existingSecret); err != nil {
 			return fmt.Errorf("failed to get existing secret: %w", err)
 		}
-		// Update the data
-		existingSecret.StringData = map[string]string{
-			preAuthKeySecretKey: key.GetKey(),
+		// Update the data (use Data field with byte values for updates, not StringData)
+		if existingSecret.Data == nil {
+			existingSecret.Data = make(map[string][]byte)
 		}
+		existingSecret.Data[preAuthKeySecretKey] = []byte(key.GetKey())
 		if err := r.Update(ctx, existingSecret); err != nil {
 			return fmt.Errorf("failed to update secret: %w", err)
 		}
@@ -607,24 +608,6 @@ func (r *HeadscalePreAuthKeyReconciler) deleteSecret(
 	}
 
 	return nil
-}
-
-// parseExpiration parses a duration string (e.g., "30m", "24h", "7d")
-func parseExpiration(exp string) (time.Duration, error) {
-	if exp == "" {
-		exp = "1h"
-	}
-
-	// Handle days (not supported by time.ParseDuration)
-	if len(exp) > 1 && exp[len(exp)-1] == 'd' {
-		days, err := strconv.Atoi(exp[:len(exp)-1])
-		if err != nil {
-			return 0, fmt.Errorf("invalid duration format: %s", exp)
-		}
-		return time.Duration(days) * 24 * time.Hour, nil
-	}
-
-	return time.ParseDuration(exp)
 }
 
 // updateStatusCondition updates the status condition of the HeadscalePreAuthKey

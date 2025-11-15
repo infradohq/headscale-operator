@@ -40,8 +40,8 @@ type HeadscalePreAuthKeySpec struct {
 	UserID uint64 `json:"userId,omitempty"`
 
 	// Expiration is the duration after which the preauth key expires
-	// Examples: 30m, 24h, 7d
-	// +kubebuilder:validation:Pattern=`^[0-9]+[mhd]$`
+	// Examples: 30m, 24h
+	// +kubebuilder:validation:Pattern=`^[0-9]+[mh]$`
 	// +kubebuilder:default="1h"
 	// +optional
 	Expiration string `json:"expiration,omitempty"`
