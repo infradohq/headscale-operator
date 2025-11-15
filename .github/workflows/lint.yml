@@ -6,7 +6,7 @@ on:
     branches: [ main ]
 
 jobs:
-  lint:
+  golangci-lint:
     name: Run on Ubuntu
     runs-on: ubuntu-latest
     steps:
@@ -22,3 +22,16 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.6.1
+
+  helm:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Run Helm Lint
+        run: helm lint helm
