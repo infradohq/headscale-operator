@@ -118,7 +118,7 @@ func (r *HeadscaleUserReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 					return ctrl.Result{}, err
 				}
 				// Requeue immediately to recreate the user
-				return ctrl.Result{Requeue: true}, nil
+				return ctrl.Result{}, nil
 			}
 			// For other errors (network, API, etc), log and retry later
 			log.Error(err, "Failed to verify user in Headscale")
@@ -348,7 +348,7 @@ func (r *HeadscaleUserReconciler) getAPIKey(ctx context.Context, headscale *head
 	// Get the secret name from the Headscale spec
 	secretName := headscale.Spec.APIKey.SecretName
 	if secretName == "" {
-		secretName = "headscale-api-key"
+		secretName = defaultAPIKeySecretName
 	}
 
 	// Get the secret

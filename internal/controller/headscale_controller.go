@@ -51,14 +51,15 @@ type HeadscaleReconciler struct {
 }
 
 const (
-	headscaleFinalizer = "headscale.infrado.cloud/finalizer"
-	configMapName      = "headscale-config"
-	statefulSetName    = "headscale"
-	serviceName        = "headscale"
-	metricsServiceName = "headscale-metrics"
-	serviceAccountName = "headscale"
-	roleName           = "headscale"
-	roleBindingName    = "headscale"
+	headscaleFinalizer      = "headscale.infrado.cloud/finalizer"
+	configMapName           = "headscale-config"
+	statefulSetName         = "headscale"
+	serviceName             = "headscale"
+	metricsServiceName      = "headscale-metrics"
+	serviceAccountName      = "headscale"
+	roleName                = "headscale"
+	roleBindingName         = "headscale"
+	defaultAPIKeySecretName = "headscale-api-key"
 )
 
 // +kubebuilder:rbac:groups=headscale.infrado.cloud,resources=headscales,verbs=get;list;watch;create;update;patch;delete
@@ -737,7 +738,7 @@ func (r *HeadscaleReconciler) roleForHeadscale(h *headscalev1beta1.Headscale) *r
 	// Determine the API key secret name from the spec, with fallback to default
 	secretName := h.Spec.APIKey.SecretName
 	if secretName == "" {
-		secretName = "headscale-api-key"
+		secretName = defaultAPIKeySecretName
 	}
 
 	return &rbacv1.Role{

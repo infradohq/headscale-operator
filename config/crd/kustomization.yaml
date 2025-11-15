@@ -4,6 +4,7 @@
 resources:
 - bases/headscale.infrado.cloud_headscales.yaml
 - bases/headscale.infrado.cloud_headscaleusers.yaml
+- bases/headscale.infrado.cloud_headscalepreauthkeys.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

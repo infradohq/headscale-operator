@@ -1,0 +1,34 @@
+apiVersion: headscale.infrado.cloud/v1beta1
+kind: HeadscalePreAuthKey
+metadata:
+  labels:
+    app.kubernetes.io/name: headscale-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: headscalepreauthkey-sample
+spec:
+  # Reference to the Headscale instance
+  headscaleRef: headscale-sample
+  
+  # Reference to the HeadscaleUser (use either headscaleUserRef or userId)
+  headscaleUserRef: headscaleuser-sample
+  
+  # Alternatively, you can specify the user ID directly:
+  # userId: 1
+  
+  # Expiration duration (e.g., "1h", "7d", "30d")
+  expiration: "24h"
+  
+  # Make the key reusable (can be used multiple times)
+  reusable: false
+  
+  # Create ephemeral nodes (nodes that are automatically removed when disconnected)
+  ephemeral: false
+  
+  # Tags to automatically assign to nodes registered with this key
+  tags:
+    - "tag:dev"
+    - "tag:ci"
+  
+  # Optional: Name of the secret to store the preauth key
+  # If not specified, defaults to the HeadscalePreAuthKey resource name
+  # secretName: my-preauth-key-secret

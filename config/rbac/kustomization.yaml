@@ -22,6 +22,9 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the headscale-operator itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- headscalepreauthkey_admin_role.yaml
+- headscalepreauthkey_editor_role.yaml
+- headscalepreauthkey_viewer_role.yaml
 - headscaleuser_admin_role.yaml
 - headscaleuser_editor_role.yaml
 - headscaleuser_viewer_role.yaml

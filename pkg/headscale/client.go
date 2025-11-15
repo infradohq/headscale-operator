@@ -225,3 +225,47 @@ func (c *Client) GetUserByName(ctx context.Context, username string) (*v1.User, 
 
 	return users[0], nil
 }
+
+// CreatePreAuthKey creates a new preauth key in Headscale
+func (c *Client) CreatePreAuthKey(
+	ctx context.Context,
+	userID uint64,
+	reusable bool,
+	ephemeral bool,
+	expiration time.Duration,
+	tags []string,
+) (*v1.PreAuthKey, error) {
+	req := &v1.CreatePreAuthKeyRequest{
+		User:      userID,
+		Reusable:  reusable,
+		Ephemeral: ephemeral,
+		AclTags:   tags,
+	}
+
+	if expiration > 0 {
+		expirationTime := time.Now().Add(expiration)
+		req.Expiration = timestamppb.New(expirationTime)
+	}
+
+	resp, err := c.client.CreatePreAuthKey(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create preauth key: %w", err)
+	}
+
+	return resp.GetPreAuthKey(), nil
+}
+
+// ExpirePreAuthKey expires a preauth key by user and key
+func (c *Client) ExpirePreAuthKey(ctx context.Context, userID uint64, key string) error {
+	req := &v1.ExpirePreAuthKeyRequest{
+		User: userID,
+		Key:  key,
+	}
+
+	_, err := c.client.ExpirePreAuthKey(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to expire preauth key: %w", err)
+	}
+
+	return nil
+}
