@@ -53,6 +53,7 @@ rules:
   - headscale.infrado.cloud
   resources:
   - headscales
+  - headscaleusers
   verbs:
   - create
   - delete
@@ -65,12 +66,14 @@ rules:
   - headscale.infrado.cloud
   resources:
   - headscales/finalizers
+  - headscaleusers/finalizers
   verbs:
   - update
 - apiGroups:
   - headscale.infrado.cloud
   resources:
   - headscales/status
+  - headscaleusers/status
   verbs:
   - get
   - patch

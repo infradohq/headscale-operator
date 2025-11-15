@@ -132,7 +132,7 @@ func main() {
 		}
 
 		// Sleep until it's time to check
-		log.Info("Sleeping until next check", "duration", nextRotation)
+		log.Info("Sleeping until next check", "duration", nextRotation.String())
 
 		select {
 		case <-ctx.Done():

@@ -3,6 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/headscale.infrado.cloud_headscales.yaml
+- bases/headscale.infrado.cloud_headscaleusers.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

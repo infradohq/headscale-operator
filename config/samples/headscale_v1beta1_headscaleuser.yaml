@@ -1,0 +1,22 @@
+apiVersion: headscale.infrado.cloud/v1beta1
+kind: HeadscaleUser
+metadata:
+  labels:
+    app.kubernetes.io/name: headscale-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: headscaleuser-sample
+spec:
+  # Reference to the Headscale instance
+  headscaleRef: headscale-sample
+  
+  # Username must be unique and follow DNS label rules
+  username: example-user
+  
+  # Optional: Display name for the user
+  displayName: Example User
+  
+  # Optional: Email address of the user
+  email: user@example.com
+  
+  # Optional: URL to the user's profile picture
+  pictureURL: https://example.com/avatar.jpg

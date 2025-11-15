@@ -18,4 +18,13 @@ resources:
   kind: Headscale
   path: github.com/infradohq/headscale-operator/api/v1beta1
   version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: infrado.cloud
+  group: headscale
+  kind: HeadscaleUser
+  path: github.com/infradohq/headscale-operator/api/v1beta1
+  version: v1beta1
 version: "3"
