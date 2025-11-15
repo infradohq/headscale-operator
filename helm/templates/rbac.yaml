@@ -11,6 +11,7 @@ rules:
   - ""
   resources:
   - configmaps
+  - secrets
   - serviceaccounts
   - services
   verbs:
@@ -30,17 +31,6 @@ rules:
   - list
   - watch
 - apiGroups:
-  - ""
-  resources:
-  - secrets
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - apps
   resources:
   - statefulsets
@@ -55,6 +45,7 @@ rules:
 - apiGroups:
   - headscale.infrado.cloud
   resources:
+  - headscalepreauthkeys
   - headscales
   - headscaleusers
   verbs:
@@ -68,6 +59,7 @@ rules:
 - apiGroups:
   - headscale.infrado.cloud
   resources:
+  - headscalepreauthkeys/finalizers
   - headscales/finalizers
   - headscaleusers/finalizers
   verbs:
@@ -75,6 +67,7 @@ rules:
 - apiGroups:
   - headscale.infrado.cloud
   resources:
+  - headscalepreauthkeys/status
   - headscales/status
   - headscaleusers/status
   verbs:
