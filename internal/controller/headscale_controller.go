@@ -368,7 +368,7 @@ func (r *HeadscaleReconciler) reconcileRoleBinding(ctx context.Context, headscal
 func (r *HeadscaleReconciler) updateStatus(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
 	// Desired condition
 	desired := metav1.Condition{
-		Type:    "Available",
+		Type:    "Ready",
 		Status:  metav1.ConditionTrue,
 		Reason:  "Reconciled",
 		Message: "Headscale is running",

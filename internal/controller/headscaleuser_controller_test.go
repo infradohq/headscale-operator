@@ -212,7 +212,7 @@ var _ = Describe("HeadscaleUser Controller", func() {
 					return false
 				}
 				for _, condition := range headscaleUser.Status.Conditions {
-					if condition.Type == "Available" &&
+					if condition.Type == "Ready" &&
 						condition.Status == metav1.ConditionFalse &&
 						condition.Reason == "HeadscaleNotFound" {
 						return true

@@ -90,7 +90,7 @@ func (r *HeadscaleUserReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if apierrors.IsNotFound(err) {
 			log.Error(err, "Referenced Headscale instance not found", "HeadscaleRef", headscaleUser.Spec.HeadscaleRef)
 			if err := r.updateStatusCondition(ctx, headscaleUser, metav1.Condition{
-				Type:    "Available",
+				Type:    "Ready",
 				Status:  metav1.ConditionFalse,
 				Reason:  "HeadscaleNotFound",
 				Message: fmt.Sprintf("Referenced Headscale instance %s not found", headscaleUser.Spec.HeadscaleRef),
@@ -122,7 +122,7 @@ func (r *HeadscaleUserReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			// For other errors (network, API, etc), log and retry later
 			log.Error(err, "Failed to verify user in Headscale")
 			if err := r.updateStatusCondition(ctx, headscaleUser, metav1.Condition{
-				Type:    "Available",
+				Type:    "Ready",
 				Status:  metav1.ConditionFalse,
 				Reason:  "UserVerificationFailed",
 				Message: fmt.Sprintf("Failed to verify user: %v", err),
@@ -134,7 +134,7 @@ func (r *HeadscaleUserReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 		// User exists and is verified
 		if err := r.updateStatusCondition(ctx, headscaleUser, metav1.Condition{
-			Type:    "Available",
+			Type:    "Ready",
 			Status:  metav1.ConditionTrue,
 			Reason:  "UserReady",
 			Message: "User is ready in Headscale",
@@ -148,7 +148,7 @@ func (r *HeadscaleUserReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err := r.createUser(ctx, headscale, headscaleUser); err != nil {
 		log.Error(err, "Failed to create user in Headscale")
 		if err := r.updateStatusCondition(ctx, headscaleUser, metav1.Condition{
-			Type:    "Available",
+			Type:    "Ready",
 			Status:  metav1.ConditionFalse,
 			Reason:  "UserCreationFailed",
 			Message: fmt.Sprintf("Failed to create user: %v", err),
@@ -160,7 +160,7 @@ func (r *HeadscaleUserReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Update status to indicate user is ready
 	if err := r.updateStatusCondition(ctx, headscaleUser, metav1.Condition{
-		Type:    "Available",
+		Type:    "Ready",
 		Status:  metav1.ConditionTrue,
 		Reason:  "UserCreated",
 		Message: "User successfully created in Headscale",
