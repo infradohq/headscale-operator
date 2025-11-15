@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -532,9 +533,10 @@ func isPreAuthKeyNotFoundError(err error) bool {
 		return false
 	}
 
-	// Check for "AuthKey not found" in the error message
-	// as Headscale does not return proper gRPC status codes
-	return err.Error() == "AuthKey not found"
+	// Check for "AuthKey not found" in the error message using strings.Contains
+	// to be more resilient to minor error message changes.
+	// Headscale does not return proper gRPC status codes, so we rely on message matching.
+	return strings.Contains(err.Error(), "AuthKey not found")
 }
 
 // getPreAuthKeyFromSecret retrieves the preauth key string from the secret
