@@ -2,8 +2,8 @@ apiVersion: v2
 name: headscale-operator
 description: A Helm chart for deploying the Headscale Operator on Kubernetes
 type: application
-version: 0.1.1
-appVersion: "v0.2.0"
+version: 0.1.2
+appVersion: "v0.2.1"
 home: https://github.com/infradohq/headscale-operator
 sources:
   - https://github.com/infradohq/headscale-operator
