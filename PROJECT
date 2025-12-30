@@ -6,6 +6,8 @@ cliVersion: 4.9.0
 domain: infrado.cloud
 layout:
 - go.kubebuilder.io/v4
+plugins:
+  autoupdate.kubebuilder.io/v1-alpha: {}
 projectName: headscale-operator
 repo: github.com/infradohq/headscale-operator
 resources:
