@@ -674,7 +674,7 @@ type Headscale struct {
 
 	// metadata is a standard object metadata
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty,omitzero"`
+	metav1.ObjectMeta `json:"metadata,omitzero"`
 
 	// spec defines the desired state of Headscale
 	// +required
@@ -682,7 +682,7 @@ type Headscale struct {
 
 	// status defines the observed state of Headscale
 	// +optional
-	Status HeadscaleStatus `json:"status,omitempty,omitzero"`
+	Status HeadscaleStatus `json:"status,omitzero"`
 }
 
 // +kubebuilder:object:root=true
@@ -690,7 +690,7 @@ type Headscale struct {
 // HeadscaleList contains a list of Headscale
 type HeadscaleList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata,omitzero"`
 	Items           []Headscale `json:"items"`
 }
 
