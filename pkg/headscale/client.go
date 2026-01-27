@@ -149,7 +149,7 @@ func (c *Client) ListAPIKeys(ctx context.Context) ([]*v1.ApiKey, error) {
 
 // WaitForReady waits for Headscale to be ready by attempting to list API keys
 func (c *Client) WaitForReady(ctx context.Context, maxRetries int, retryInterval time.Duration) error {
-	for i := 0; i < maxRetries; i++ {
+	for i := range maxRetries {
 		_, err := c.ListAPIKeys(ctx)
 		if err == nil {
 			return nil
