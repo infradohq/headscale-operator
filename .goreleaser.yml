@@ -8,7 +8,7 @@ builds:
 
 # Skip creating archives since we're not building binaries
 archives:
-  - format: binary
+  - formats: [ 'binary' ]
 
 # Skip checksums since we have no binaries
 checksum:
