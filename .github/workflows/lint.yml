@@ -20,7 +20,7 @@ jobs:
       - name: Run linter
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.6.1
+          version: v2.8.0
 
   helm:
     runs-on: ubuntu-latest
