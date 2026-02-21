@@ -34,6 +34,9 @@ jobs:
   bump-helm-version:
     runs-on: ubuntu-latest
     needs: goreleaser
+    concurrency:
+      group: helm-version-bump
+      cancel-in-progress: false
     steps:
       - name: Checkout default branch
         uses: actions/checkout@v6
