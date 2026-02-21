@@ -30,3 +30,63 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  bump-helm-version:
+    runs-on: ubuntu-latest
+    needs: goreleaser
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Check if bump is needed
+        id: guard
+        run: |
+          SKIP=false
+
+          # Skip if tag commit is not on the default branch
+          if ! git merge-base --is-ancestor ${{ github.sha }} HEAD; then
+            echo "Tag commit is not on ${{ github.event.repository.default_branch }}, skipping bump"
+            SKIP=true
+          fi
+
+          # Skip if appVersion already matches the tag
+          CURRENT_APP_VERSION=$(grep '^appVersion:' helm/Chart.yaml | awk '{print $2}' | tr -d '"')
+          if [ "$CURRENT_APP_VERSION" = "${{ steps.version.outputs.tag }}" ]; then
+            echo "appVersion is already $CURRENT_APP_VERSION, skipping bump"
+            SKIP=true
+          fi
+
+          echo "skip=${SKIP}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump Helm chart version and appVersion
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          # Read current chart version and bump patch
+          CURRENT=$(grep '^version:' helm/Chart.yaml | awk '{print $2}')
+          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT" | cut -d. -f2)
+          PATCH=$(echo "$CURRENT" | cut -d. -f3)
+          NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+
+          sed -i "s/^version: .*/version: ${NEW_VERSION}/" helm/Chart.yaml
+          sed -i "s/^appVersion: .*/appVersion: \"${{ steps.version.outputs.tag }}\"/" helm/Chart.yaml
+          echo "Updated helm/Chart.yaml:"
+          git diff helm/Chart.yaml
+
+      - name: Commit and push
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add helm/Chart.yaml
+          git commit -m "chore: bump Helm chart to ${{ steps.version.outputs.tag }}"
+          git push origin ${{ github.event.repository.default_branch }}
