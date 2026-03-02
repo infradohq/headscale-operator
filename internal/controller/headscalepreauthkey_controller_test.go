@@ -38,13 +38,14 @@ import (
 var _ = Describe("HeadscalePreAuthKey Controller", func() {
 	Context("When reconciling a HeadscalePreAuthKey resource", func() {
 		const (
-			resourceName       = "test-preauthkey"
-			headscaleName      = "test-headscale-pak"
-			headscaleUserName  = "test-user-pak"
-			namespace          = "default"
-			timeout            = time.Second * 10
-			interval           = time.Millisecond * 250
-			readyConditionType = "Ready"
+			resourceName            = "test-preauthkey"
+			headscaleName           = "test-headscale-pak"
+			headscaleUserName       = "test-user-pak"
+			namespace               = "default"
+			timeout                 = time.Second * 10
+			interval                = time.Millisecond * 250
+			readyConditionType      = "Ready"
+			headscaleNotFoundReason = "HeadscaleNotFound"
 		)
 
 		ctx := context.Background()
@@ -337,7 +338,8 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 				for _, condition := range preAuthKey.Status.Conditions {
 					if condition.Type == readyConditionType &&
 						condition.Status == metav1.ConditionFalse &&
-						condition.Reason == "HeadscaleNotFound" {
+						condition.Reason == headscaleNotFoundReason &&
+						condition.ObservedGeneration == preAuthKey.Generation {
 						return true
 					}
 				}
@@ -388,7 +390,8 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 				for _, condition := range preAuthKey.Status.Conditions {
 					if condition.Type == readyConditionType &&
 						condition.Status == metav1.ConditionFalse &&
-						condition.Reason == "UserNotFound" {
+						condition.Reason == "UserNotFound" &&
+						condition.ObservedGeneration == preAuthKey.Generation {
 						return true
 					}
 				}
@@ -452,7 +455,8 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 				for _, condition := range preAuthKey.Status.Conditions {
 					if condition.Type == readyConditionType &&
 						condition.Status == metav1.ConditionFalse &&
-						condition.Reason == "UserNotReady" {
+						condition.Reason == "UserNotReady" &&
+						condition.ObservedGeneration == preAuthKey.Generation {
 						return true
 					}
 				}
@@ -462,6 +466,109 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 			By("Cleaning up test resources")
 			Expect(k8sClient.Delete(ctx, preAuthKey)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, userNotReady)).To(Succeed())
+		})
+
+		It("should preserve LastTransitionTime when reason changes but status stays the same", func() {
+			By("Creating a HeadscalePreAuthKey referencing a non-existent user")
+			preAuthKey := &headscalev1beta1.HeadscalePreAuthKey{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName + "-ltt",
+					Namespace: namespace,
+				},
+				Spec: headscalev1beta1.HeadscalePreAuthKeySpec{
+					HeadscaleRef:     headscaleName,
+					HeadscaleUserRef: "user-ltt-not-ready",
+					Expiration:       "1h",
+				},
+			}
+			Expect(k8sClient.Create(ctx, preAuthKey)).To(Succeed())
+
+			lttNamespacedName := types.NamespacedName{
+				Name:      resourceName + "-ltt",
+				Namespace: namespace,
+			}
+
+			controllerReconciler := &HeadscalePreAuthKeyReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			By("Reconciling - should get UserNotFound")
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: lttNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Recording the initial LastTransitionTime for Ready=False/UserNotFound")
+			var initialTransitionTime metav1.Time
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, lttNamespacedName, preAuthKey)
+				if err != nil {
+					return false
+				}
+				for _, condition := range preAuthKey.Status.Conditions {
+					if condition.Type == readyConditionType &&
+						condition.Status == metav1.ConditionFalse &&
+						condition.Reason == "UserNotFound" {
+						initialTransitionTime = condition.LastTransitionTime
+						return true
+					}
+				}
+				return false
+			}, timeout, interval).Should(BeTrue())
+			Expect(initialTransitionTime.IsZero()).To(BeFalse())
+
+			By("Creating the user without UserID (not ready)")
+			userLtt := &headscalev1beta1.HeadscaleUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-ltt-not-ready",
+					Namespace: namespace,
+				},
+				Spec: headscalev1beta1.HeadscaleUserSpec{
+					HeadscaleRef: headscaleName,
+					Username:     "lttnotreadyuser",
+				},
+			}
+			Expect(k8sClient.Create(ctx, userLtt)).To(Succeed())
+
+			By("Reconciling again - should get UserNotReady (Status stays False, Reason changes)")
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: lttNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying condition changed to UserNotReady with preserved LastTransitionTime")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, lttNamespacedName, preAuthKey)
+				if err != nil {
+					return false
+				}
+				for _, condition := range preAuthKey.Status.Conditions {
+					if condition.Type == readyConditionType &&
+						condition.Status == metav1.ConditionFalse &&
+						condition.Reason == "UserNotReady" {
+						return true
+					}
+				}
+				return false
+			}, timeout, interval).Should(BeTrue())
+
+			Expect(k8sClient.Get(ctx, lttNamespacedName, preAuthKey)).To(Succeed())
+			foundReady := false
+			for _, condition := range preAuthKey.Status.Conditions {
+				if condition.Type == readyConditionType {
+					foundReady = true
+					Expect(condition.LastTransitionTime).To(Equal(initialTransitionTime),
+						"LastTransitionTime should not change when status remains False")
+					Expect(condition.ObservedGeneration).To(Equal(preAuthKey.Generation),
+						"ObservedGeneration should match the object's generation")
+				}
+			}
+			Expect(foundReady).To(BeTrue(), "expected Ready condition to be present")
+
+			By("Cleaning up test resources")
+			Expect(k8sClient.Delete(ctx, preAuthKey)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, userLtt)).To(Succeed())
 		})
 
 		It("should reject spec with neither HeadscaleUserRef nor UserID", func() {

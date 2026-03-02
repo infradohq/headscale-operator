@@ -366,33 +366,21 @@ func (r *HeadscaleReconciler) reconcileRoleBinding(ctx context.Context, headscal
 
 // updateStatus updates the status of the Headscale instance
 func (r *HeadscaleReconciler) updateStatus(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	// Desired condition
+	patch := client.MergeFrom(headscale.DeepCopy())
+
 	desired := metav1.Condition{
-		Type:    "Ready",
-		Status:  metav1.ConditionTrue,
-		Reason:  "Reconciled",
-		Message: "Headscale is running",
+		Type:               "Ready",
+		Status:             metav1.ConditionTrue,
+		Reason:             "Reconciled",
+		Message:            "Headscale is running",
+		ObservedGeneration: headscale.Generation,
 	}
 
-	existing := meta.FindStatusCondition(headscale.Status.Conditions, desired.Type)
-	if existing != nil && existing.Status == desired.Status && existing.Reason == desired.Reason && existing.Message == desired.Message {
-		// No change needed; keep original LastTransitionTime
+	if !meta.SetStatusCondition(&headscale.Status.Conditions, desired) {
 		return nil
 	}
 
-	desired.LastTransitionTime = metav1.Now()
-	// Replace or append condition
-	if existing == nil {
-		headscale.Status.Conditions = append(headscale.Status.Conditions, desired)
-	} else {
-		for i := range headscale.Status.Conditions {
-			if headscale.Status.Conditions[i].Type == desired.Type {
-				headscale.Status.Conditions[i] = desired
-				break
-			}
-		}
-	}
-	return r.Status().Update(ctx, headscale)
+	return r.Status().Patch(ctx, headscale, patch)
 }
 
 // configMapForHeadscale returns a ConfigMap object for Headscale configuration

@@ -344,25 +344,14 @@ func (r *HeadscaleUserReconciler) verifyUser(ctx context.Context, headscale *hea
 
 // updateStatusCondition updates the status condition of the HeadscaleUser
 func (r *HeadscaleUserReconciler) updateStatusCondition(ctx context.Context, headscaleUser *headscalev1beta1.HeadscaleUser, condition metav1.Condition) error {
-	existing := meta.FindStatusCondition(headscaleUser.Status.Conditions, condition.Type)
-	if existing != nil && existing.Status == condition.Status && existing.Reason == condition.Reason && existing.Message == condition.Message {
-		// No change needed
+	patch := client.MergeFrom(headscaleUser.DeepCopy())
+
+	condition.ObservedGeneration = headscaleUser.Generation
+	if !meta.SetStatusCondition(&headscaleUser.Status.Conditions, condition) {
 		return nil
 	}
 
-	condition.LastTransitionTime = metav1.Now()
-	if existing == nil {
-		headscaleUser.Status.Conditions = append(headscaleUser.Status.Conditions, condition)
-	} else {
-		for i := range headscaleUser.Status.Conditions {
-			if headscaleUser.Status.Conditions[i].Type == condition.Type {
-				headscaleUser.Status.Conditions[i] = condition
-				break
-			}
-		}
-	}
-
-	return r.Status().Update(ctx, headscaleUser)
+	return r.Status().Patch(ctx, headscaleUser, patch)
 }
 
 // SetupWithManager sets up the controller with the Manager.

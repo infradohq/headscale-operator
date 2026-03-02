@@ -36,11 +36,13 @@ import (
 var _ = Describe("HeadscaleUser Controller", func() {
 	Context("When reconciling a HeadscaleUser resource", func() {
 		const (
-			resourceName  = "test-user"
-			headscaleName = "test-headscale"
-			namespace     = "default"
-			timeout       = time.Second * 10
-			interval      = time.Millisecond * 250
+			resourceName            = "test-user"
+			headscaleName           = "test-headscale"
+			namespace               = "default"
+			timeout                 = time.Second * 10
+			interval                = time.Millisecond * 250
+			readyConditionType      = "Ready"
+			headscaleNotFoundReason = "HeadscaleNotFound"
 		)
 
 		ctx := context.Background()
@@ -205,21 +207,95 @@ var _ = Describe("HeadscaleUser Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking that the status reflects the missing Headscale")
+			By("Checking that the status reflects the missing Headscale with ObservedGeneration")
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, missingTypeNamespacedName, headscaleUser)
 				if err != nil {
 					return false
 				}
 				for _, condition := range headscaleUser.Status.Conditions {
-					if condition.Type == "Ready" &&
+					if condition.Type == readyConditionType &&
 						condition.Status == metav1.ConditionFalse &&
-						condition.Reason == "HeadscaleNotFound" {
+						condition.Reason == headscaleNotFoundReason &&
+						condition.ObservedGeneration == headscaleUser.Generation {
 						return true
 					}
 				}
 				return false
 			}, timeout, interval).Should(BeTrue())
+
+			By("Cleaning up the test resource")
+			Expect(k8sClient.Delete(ctx, headscaleUser)).To(Succeed())
+		})
+
+		It("should preserve LastTransitionTime when condition is unchanged on re-reconcile", func() {
+			By("Creating a HeadscaleUser with non-existent Headscale reference")
+			headscaleUser := &headscalev1beta1.HeadscaleUser{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName + "-ltt",
+					Namespace: namespace,
+				},
+				Spec: headscalev1beta1.HeadscaleUserSpec{
+					HeadscaleRef: "non-existent-headscale-ltt",
+					Username:     "lttuser",
+				},
+			}
+			Expect(k8sClient.Create(ctx, headscaleUser)).To(Succeed())
+
+			lttNamespacedName := types.NamespacedName{
+				Name:      resourceName + "-ltt",
+				Namespace: namespace,
+			}
+
+			controllerReconciler := &HeadscaleUserReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			By("Reconciling to set the initial condition")
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: lttNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Recording the initial LastTransitionTime")
+			var initialTransitionTime metav1.Time
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, lttNamespacedName, headscaleUser)
+				if err != nil {
+					return false
+				}
+				for _, condition := range headscaleUser.Status.Conditions {
+					if condition.Type == readyConditionType &&
+						condition.Status == metav1.ConditionFalse &&
+						condition.Reason == headscaleNotFoundReason {
+						initialTransitionTime = condition.LastTransitionTime
+						return true
+					}
+				}
+				return false
+			}, timeout, interval).Should(BeTrue())
+			Expect(initialTransitionTime.IsZero()).To(BeFalse())
+
+			By("Reconciling again with the same condition")
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: lttNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying LastTransitionTime is preserved and ObservedGeneration is set")
+			Expect(k8sClient.Get(ctx, lttNamespacedName, headscaleUser)).To(Succeed())
+			foundReady := false
+			for _, condition := range headscaleUser.Status.Conditions {
+				if condition.Type == readyConditionType {
+					foundReady = true
+					Expect(condition.LastTransitionTime).To(Equal(initialTransitionTime),
+						"LastTransitionTime should not change when condition is unchanged")
+					Expect(condition.ObservedGeneration).To(Equal(headscaleUser.Generation),
+						"ObservedGeneration should match the object's generation")
+				}
+			}
+			Expect(foundReady).To(BeTrue(), "expected Ready condition to be present")
 
 			By("Cleaning up the test resource")
 			Expect(k8sClient.Delete(ctx, headscaleUser)).To(Succeed())

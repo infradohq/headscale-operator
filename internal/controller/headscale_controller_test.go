@@ -210,14 +210,16 @@ var _ = Describe("Headscale Controller", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			By("Verifying status condition was set")
+			By("Verifying status condition was set with ObservedGeneration")
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, typeNamespacedName, createdHeadscale)
 				if err != nil {
 					return false
 				}
 				for _, condition := range createdHeadscale.Status.Conditions {
-					if condition.Type == "Ready" && condition.Status == metav1.ConditionTrue {
+					if condition.Type == readyConditionType &&
+						condition.Status == metav1.ConditionTrue &&
+						condition.ObservedGeneration == createdHeadscale.Generation {
 						return true
 					}
 				}

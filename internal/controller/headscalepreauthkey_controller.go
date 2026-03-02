@@ -551,26 +551,14 @@ func (r *HeadscalePreAuthKeyReconciler) updateStatusCondition(
 	preAuthKey *headscalev1beta1.HeadscalePreAuthKey,
 	condition metav1.Condition,
 ) error {
-	existing := meta.FindStatusCondition(preAuthKey.Status.Conditions, condition.Type)
-	if existing != nil && existing.Status == condition.Status &&
-		existing.Reason == condition.Reason && existing.Message == condition.Message {
-		// No change needed
+	patch := client.MergeFrom(preAuthKey.DeepCopy())
+
+	condition.ObservedGeneration = preAuthKey.Generation
+	if !meta.SetStatusCondition(&preAuthKey.Status.Conditions, condition) {
 		return nil
 	}
 
-	condition.LastTransitionTime = metav1.Now()
-	if existing == nil {
-		preAuthKey.Status.Conditions = append(preAuthKey.Status.Conditions, condition)
-	} else {
-		for i := range preAuthKey.Status.Conditions {
-			if preAuthKey.Status.Conditions[i].Type == condition.Type {
-				preAuthKey.Status.Conditions[i] = condition
-				break
-			}
-		}
-	}
-
-	return r.Status().Update(ctx, preAuthKey)
+	return r.Status().Patch(ctx, preAuthKey, patch)
 }
 
 // SetupWithManager sets up the controller with the Manager.
