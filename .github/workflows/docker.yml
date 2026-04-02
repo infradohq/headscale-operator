@@ -43,7 +43,7 @@ jobs:
           type=raw,value=latest
 
     - name: Build and push Docker image
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@v7
       with:
         context: .
         platforms: linux/amd64,linux/arm64
@@ -62,7 +62,7 @@ jobs:
           type=raw,value=latest
 
     - name: Build and push apikey-manager Docker image
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@v7
       with:
         context: .
         file: ./Dockerfile.apikey-manager
