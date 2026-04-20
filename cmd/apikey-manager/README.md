@@ -51,12 +51,12 @@ metadata:
 spec:
   # ... other configuration ...
   
-  apiKey:
+  api_key:
     # Enable/disable automatic API key management (default: true)
-    autoManage: true
+    auto_manage: true
     
     # Name of the Kubernetes secret to store the API key (default: "headscale-api-key")
-    secretName: headscale-api-key
+    secret_name: headscale-api-key
     
     # API key expiration duration in Go duration format (default: "2160h")
     # Examples: "720h" (30 days), "2160h" (90 days), "8760h" (365 days)
@@ -67,7 +67,7 @@ spec:
     # Time before expiration to rotate the key (default: "1920h" = 80 days)
     # Must be less than expiration
     # Examples: "168h" (7 days), "240h" (10 days), "480h" (20 days)
-    rotationBuffer: "240h"
+    rotation_buffer: "240h"
 ```
 
 ## How It Works
@@ -182,14 +182,14 @@ kubectl auth can-i update secrets --as=system:serviceaccount:default:headscale
 
 ### Adding to an existing Headscale deployment
 
-The sidecar is automatically injected when `spec.apiKey.autoManage` is `true` (the default).
+The sidecar is automatically injected when `spec.api_key.auto_manage` is `true` (the default).
 
 To disable automatic API key management:
 
 ```yaml
 spec:
-  apiKey:
-    autoManage: false
+  api_key:
+    auto_manage: false
 ```
 
 ### Testing locally
