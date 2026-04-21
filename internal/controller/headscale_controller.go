@@ -49,16 +49,24 @@ type HeadscaleReconciler struct {
 }
 
 const (
-	headscaleFinalizer      = "headscale.infrado.cloud/finalizer"
-	configMapName           = "headscale-config"
-	statefulSetName         = "headscale"
-	serviceName             = "headscale"
-	metricsServiceName      = "headscale-metrics"
-	serviceAccountName      = "headscale"
-	roleName                = "headscale"
-	roleBindingName         = "headscale"
-	defaultAPIKeySecretName = "headscale-api-key"
+	headscaleFinalizer = "headscale.infrado.cloud/finalizer"
 )
+
+// Child resource names are derived from the Headscale CR's metadata.name so
+// that multiple Headscale instances can coexist in the same namespace. The
+// StatefulSet, Service, ServiceAccount, Role, and RoleBinding all share
+// h.Name directly; only these suffixed names need a helper.
+func configMapNameFor(h *headscalev1beta1.Headscale) string      { return h.Name + "-config" }
+func metricsServiceNameFor(h *headscalev1beta1.Headscale) string { return h.Name + "-metrics" }
+
+// apiKeySecretNameFor returns the configured secret name, falling back to
+// "<name>-api-key" so multiple instances in one namespace don't collide.
+func apiKeySecretNameFor(h *headscalev1beta1.Headscale) string {
+	if h.Spec.APIKey.SecretName != "" {
+		return h.Spec.APIKey.SecretName
+	}
+	return h.Name + "-api-key"
+}
 
 // +kubebuilder:rbac:groups=headscale.infrado.cloud,resources=headscales,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=headscale.infrado.cloud,resources=headscales/status,verbs=get;update;patch
@@ -392,7 +400,7 @@ func (r *HeadscaleReconciler) configMapForHeadscale(h *headscalev1beta1.Headscal
 
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      configMapName,
+			Name:      configMapNameFor(h),
 			Namespace: h.Namespace,
 			Labels:    labelsForHeadscale(h.Name),
 		},
@@ -527,7 +535,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 			VolumeSource: corev1.VolumeSource{
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{
-						Name: configMapName,
+						Name: configMapNameFor(h),
 					},
 				},
 			},
@@ -568,7 +576,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Args: []string{
 				"--socket-path=" + h.Spec.Config.UnixSocket,
-				"--secret-name=" + h.Spec.APIKey.SecretName,
+				"--secret-name=" + apiKeySecretNameFor(h),
 				"--expiration=" + h.Spec.APIKey.Expiration,
 				"--rotation-buffer=" + h.Spec.APIKey.RotationBuffer,
 			},
@@ -610,7 +618,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      statefulSetName,
+			Name:      h.Name,
 			Namespace: h.Namespace,
 			Labels:    labels,
 		},
@@ -619,7 +627,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 			Selector: &metav1.LabelSelector{
 				MatchLabels: labels,
 			},
-			ServiceName: serviceName,
+			ServiceName: h.Name,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: labels,
@@ -628,7 +636,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 					},
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName: serviceAccountName,
+					ServiceAccountName: h.Name,
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsUser:    ptr.To(int64(65532)),
 						RunAsGroup:   ptr.To(int64(65532)),
@@ -665,7 +673,7 @@ func (r *HeadscaleReconciler) serviceForHeadscale(h *headscalev1beta1.Headscale)
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceName,
+			Name:      h.Name,
 			Namespace: h.Namespace,
 			Labels:    labels,
 		},
@@ -699,7 +707,7 @@ func (r *HeadscaleReconciler) metricsServiceForHeadscale(h *headscalev1beta1.Hea
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      metricsServiceName,
+			Name:      metricsServiceNameFor(h),
 			Namespace: h.Namespace,
 			Labels:    labels,
 		},
@@ -722,7 +730,7 @@ func (r *HeadscaleReconciler) metricsServiceForHeadscale(h *headscalev1beta1.Hea
 func (r *HeadscaleReconciler) serviceAccountForHeadscale(h *headscalev1beta1.Headscale) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      serviceAccountName,
+			Name:      h.Name,
 			Namespace: h.Namespace,
 			Labels:    labelsForHeadscale(h.Name),
 		},
@@ -731,15 +739,9 @@ func (r *HeadscaleReconciler) serviceAccountForHeadscale(h *headscalev1beta1.Hea
 
 // roleForHeadscale returns a Role object for Headscale pods with permissions to manage Secrets
 func (r *HeadscaleReconciler) roleForHeadscale(h *headscalev1beta1.Headscale) *rbacv1.Role {
-	// Determine the API key secret name from the spec, with fallback to default
-	secretName := h.Spec.APIKey.SecretName
-	if secretName == "" {
-		secretName = defaultAPIKeySecretName
-	}
-
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      roleName,
+			Name:      h.Name,
 			Namespace: h.Namespace,
 			Labels:    labelsForHeadscale(h.Name),
 		},
@@ -747,7 +749,7 @@ func (r *HeadscaleReconciler) roleForHeadscale(h *headscalev1beta1.Headscale) *r
 			{
 				APIGroups:     []string{""},
 				Resources:     []string{"secrets"},
-				ResourceNames: []string{secretName},
+				ResourceNames: []string{apiKeySecretNameFor(h)},
 				Verbs:         []string{"get", "list", "watch", "update", "patch"},
 			},
 			{
@@ -763,19 +765,19 @@ func (r *HeadscaleReconciler) roleForHeadscale(h *headscalev1beta1.Headscale) *r
 func (r *HeadscaleReconciler) roleBindingForHeadscale(h *headscalev1beta1.Headscale) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      roleBindingName,
+			Name:      h.Name,
 			Namespace: h.Namespace,
 			Labels:    labelsForHeadscale(h.Name),
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "Role",
-			Name:     roleName,
+			Name:     h.Name,
 		},
 		Subjects: []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
-				Name:      serviceAccountName,
+				Name:      h.Name,
 				Namespace: h.Namespace,
 			},
 		},

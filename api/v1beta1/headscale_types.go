@@ -672,8 +672,9 @@ type APIKeyConfig struct {
 	// +optional
 	AutoManage *bool `json:"auto_manage,omitempty"`
 
-	// SecretName is the name of the Kubernetes secret to store the API key
-	// +kubebuilder:default="headscale-api-key"
+	// SecretName is the name of the Kubernetes secret to store the API key.
+	// When empty, the operator defaults to "<headscale-name>-api-key" so that
+	// multiple Headscale instances in the same namespace do not collide.
 	// +optional
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	SecretName string `json:"secret_name,omitempty"`

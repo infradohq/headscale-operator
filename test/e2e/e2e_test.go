@@ -329,7 +329,7 @@ spec:
 
 			By("verifying the Headscale StatefulSet is created")
 			verifyStatefulSet := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "statefulset", "headscale",
+				cmd := exec.Command("kubectl", "get", "statefulset", headscaleName,
 					"-n", testNamespace, "-o", "jsonpath={.status.readyReplicas}")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -465,7 +465,7 @@ spec:
 
 			By("verifying the user exists in Headscale")
 			verifyUserInHeadscale := func(g Gomega) {
-				pod, err := getHeadscalePodName(testNamespace, "headscale")
+				pod, err := getHeadscalePodName(testNamespace, headscaleName)
 				g.Expect(err).NotTo(HaveOccurred())
 
 				// exec into headscale pod and check user list
@@ -485,7 +485,7 @@ spec:
 			By("verifying the user is removed from Headscale")
 			verifyUserRemovedFromHeadscale := func(g Gomega) {
 				// We need to re-fetch pod name just in case, but it should be same
-				pod, err := getHeadscalePodName(testNamespace, "headscale")
+				pod, err := getHeadscalePodName(testNamespace, headscaleName)
 				g.Expect(err).NotTo(HaveOccurred())
 
 				cmd := exec.Command("kubectl", "exec", "-n", testNamespace, pod, "--", "headscale", "users", "list", "-o", "json")
@@ -648,7 +648,7 @@ spec:
 
 			By("verifying the preauth key exists in Headscale")
 			verifyKeyInHeadscale := func(g Gomega) {
-				pod, err := getHeadscalePodName(testNamespace, "headscale")
+				pod, err := getHeadscalePodName(testNamespace, headscaleName)
 				g.Expect(err).NotTo(HaveOccurred())
 
 				cmd := exec.Command("kubectl", "exec", "-n", testNamespace, pod, "--", "headscale", "preauthkeys", "list", "-o", "json")
@@ -667,7 +667,7 @@ spec:
 
 			By("verifying the preauth key is removed from Headscale")
 			verifyKeyRemovedFromHeadscale := func(g Gomega) {
-				pod, err := getHeadscalePodName(testNamespace, "headscale")
+				pod, err := getHeadscalePodName(testNamespace, headscaleName)
 				g.Expect(err).NotTo(HaveOccurred())
 
 				cmd := exec.Command("kubectl", "exec", "-n", testNamespace, pod, "--", "headscale", "preauthkeys", "list", "-o", "json")
@@ -714,7 +714,7 @@ spec:
 
 			By("verifying the preauth key exists in Headscale")
 			verifyKeyInHeadscale := func(g Gomega) {
-				pod, err := getHeadscalePodName(testNamespace, "headscale")
+				pod, err := getHeadscalePodName(testNamespace, headscaleName)
 				g.Expect(err).NotTo(HaveOccurred())
 				cmd := exec.Command("kubectl", "exec", "-n", testNamespace, pod, "--", "headscale", "preauthkeys", "list", "-o", "json")
 				output, err := utils.Run(cmd)
@@ -748,7 +748,7 @@ spec:
 
 			By("verifying the preauth key is removed from Headscale")
 			verifyKeyRemovedFromHeadscale := func(g Gomega) {
-				pod, err := getHeadscalePodName(testNamespace, "headscale")
+				pod, err := getHeadscalePodName(testNamespace, headscaleName)
 				g.Expect(err).NotTo(HaveOccurred())
 				cmd := exec.Command("kubectl", "exec", "-n", testNamespace, pod, "--", "headscale", "preauthkeys", "list", "-o", "json")
 				output, err := utils.Run(cmd)

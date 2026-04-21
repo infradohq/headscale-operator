@@ -57,32 +57,31 @@ var _ = Describe("Headscale Controller", func() {
 			suffixes := []string{"", "-automanage", "-no-automanage", "-update", "-deletion", "-replicas", "-pvc", "-security", "-extras"}
 
 			for _, suffix := range suffixes {
-				resourceName := types.NamespacedName{
-					Name:      "test-headscale" + suffix,
+				crName := "test-headscale" + suffix
+				resourceNSName := types.NamespacedName{
+					Name:      crName,
 					Namespace: namespace,
 				}
 
 				headscale := &headscalev1beta1.Headscale{}
-				err := k8sClient.Get(ctx, resourceName, headscale)
+				err := k8sClient.Get(ctx, resourceNSName, headscale)
 				if err == nil {
 					_ = k8sClient.Delete(ctx, headscale)
 				}
+
+				// envtest has no garbage collector, so clean up per-CR child resources explicitly.
+				statefulSet := &appsv1.StatefulSet{}
+				ssName := types.NamespacedName{Name: crName, Namespace: namespace}
+				if err := k8sClient.Get(ctx, ssName, statefulSet); err == nil {
+					_ = k8sClient.Delete(ctx, statefulSet)
+				}
 			}
 
-			By("Cleaning up shared StatefulSet")
+			By("Waiting for the base StatefulSet to be cleaned up")
 			statefulSet := &appsv1.StatefulSet{}
-			statefulSetName := types.NamespacedName{
-				Name:      "headscale",
-				Namespace: namespace,
-			}
-			err := k8sClient.Get(ctx, statefulSetName, statefulSet)
-			if err == nil {
-				_ = k8sClient.Delete(ctx, statefulSet)
-			}
-
-			By("Waiting for all resources to be cleaned up")
+			baseSSName := types.NamespacedName{Name: "test-headscale", Namespace: namespace}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, statefulSetName, statefulSet)
+				err := k8sClient.Get(ctx, baseSSName, statefulSet)
 				return err != nil
 			}, timeout, interval).Should(BeTrue())
 		})
@@ -144,7 +143,7 @@ var _ = Describe("Headscale Controller", func() {
 			configMap := &corev1.ConfigMap{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      configMapName,
+					Name:      resourceName + "-config",
 					Namespace: namespace,
 				}, configMap)
 				return err == nil
@@ -154,7 +153,7 @@ var _ = Describe("Headscale Controller", func() {
 			statefulSet := &appsv1.StatefulSet{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      statefulSetName,
+					Name:      resourceName,
 					Namespace: namespace,
 				}, statefulSet)
 				return err == nil
@@ -164,7 +163,7 @@ var _ = Describe("Headscale Controller", func() {
 			service := &corev1.Service{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      serviceName,
+					Name:      resourceName,
 					Namespace: namespace,
 				}, service)
 				return err == nil
@@ -174,7 +173,7 @@ var _ = Describe("Headscale Controller", func() {
 			metricsService := &corev1.Service{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      metricsServiceName,
+					Name:      resourceName + "-metrics",
 					Namespace: namespace,
 				}, metricsService)
 				return err == nil
@@ -184,7 +183,7 @@ var _ = Describe("Headscale Controller", func() {
 			serviceAccount := &corev1.ServiceAccount{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      serviceAccountName,
+					Name:      resourceName,
 					Namespace: namespace,
 				}, serviceAccount)
 				return err == nil
@@ -194,7 +193,7 @@ var _ = Describe("Headscale Controller", func() {
 			role := &rbacv1.Role{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      roleName,
+					Name:      resourceName,
 					Namespace: namespace,
 				}, role)
 				return err == nil
@@ -204,7 +203,7 @@ var _ = Describe("Headscale Controller", func() {
 			roleBinding := &rbacv1.RoleBinding{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      roleBindingName,
+					Name:      resourceName,
 					Namespace: namespace,
 				}, roleBinding)
 				return err == nil
@@ -270,7 +269,7 @@ var _ = Describe("Headscale Controller", func() {
 			statefulSet := &appsv1.StatefulSet{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      statefulSetName,
+					Name:      resourceName + "-automanage",
 					Namespace: namespace,
 				}, statefulSet)
 				if err != nil {
@@ -331,7 +330,7 @@ var _ = Describe("Headscale Controller", func() {
 			statefulSet := &appsv1.StatefulSet{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      statefulSetName,
+					Name:      resourceName + "-no-automanage",
 					Namespace: namespace,
 				}, statefulSet)
 				if err != nil {
@@ -387,7 +386,7 @@ var _ = Describe("Headscale Controller", func() {
 			configMap := &corev1.ConfigMap{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      configMapName,
+					Name:      resourceName + "-update-config",
 					Namespace: namespace,
 				}, configMap)
 				return err == nil
@@ -414,7 +413,7 @@ var _ = Describe("Headscale Controller", func() {
 			By("Verifying ConfigMap was updated")
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      configMapName,
+					Name:      resourceName + "-update-config",
 					Namespace: namespace,
 				}, configMap)
 				if err != nil {
@@ -536,7 +535,7 @@ var _ = Describe("Headscale Controller", func() {
 			statefulSet := &appsv1.StatefulSet{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      statefulSetName,
+					Name:      resourceName + "-replicas",
 					Namespace: namespace,
 				}, statefulSet)
 				if err != nil {
@@ -591,7 +590,7 @@ var _ = Describe("Headscale Controller", func() {
 			statefulSet := &appsv1.StatefulSet{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      statefulSetName,
+					Name:      resourceName + "-pvc",
 					Namespace: namespace,
 				}, statefulSet)
 				if err != nil {
@@ -646,7 +645,7 @@ var _ = Describe("Headscale Controller", func() {
 			statefulSet := &appsv1.StatefulSet{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      statefulSetName,
+					Name:      resourceName + "-security",
 					Namespace: namespace,
 				}, statefulSet)
 				if err != nil {
@@ -751,7 +750,7 @@ var _ = Describe("Headscale Controller", func() {
 			statefulSet := &appsv1.StatefulSet{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      statefulSetName,
+					Name:      resourceName + "-extras",
 					Namespace: namespace,
 				}, statefulSet)
 				if err != nil {

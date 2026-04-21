@@ -53,11 +53,7 @@ func extractPort(addr string, defaultPort int32) int32 {
 // getAPIKey retrieves the API key from the secret created by the apikey-manager sidecar.
 // This function is shared across all controllers that need to interact with the Headscale API.
 func getAPIKey(ctx context.Context, k8sClient client.Client, headscale *headscalev1beta1.Headscale) (string, error) {
-	// Get the secret name from the Headscale spec
-	secretName := headscale.Spec.APIKey.SecretName
-	if secretName == "" {
-		secretName = defaultAPIKeySecretName
-	}
+	secretName := apiKeySecretNameFor(headscale)
 
 	// Get the secret
 	secret := &corev1.Secret{}
@@ -86,5 +82,5 @@ func getGRPCServiceAddress(headscale *headscalev1beta1.Headscale) string {
 	grpcPort := extractPort(headscale.Spec.Config.GRPCListenAddr, 50443)
 
 	// Return the service address and let Kubernetes DNS search domain handle the rest
-	return fmt.Sprintf("%s.%s.svc:%d", serviceName, headscale.Namespace, grpcPort)
+	return fmt.Sprintf("%s.%s.svc:%d", headscale.Name, headscale.Namespace, grpcPort)
 }
