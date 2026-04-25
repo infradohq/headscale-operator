@@ -907,7 +907,272 @@ spec:
 			Eventually(verifyKeyDeleted, 60*time.Second, 2*time.Second).Should(Succeed())
 		})
 	})
+
+	Context("HeadscaleAutoApprover CR", func() {
+		const (
+			headscaleName    = "e2e-headscale-aa"
+			approverName     = "e2e-aa-router"
+			secondApprover   = "e2e-aa-extra"
+			fileModeHeadscale = "e2e-headscale-aa-file"
+			fileModeApprover  = "e2e-aa-filemode"
+		)
+
+		AfterEach(func() {
+			By("cleaning up auto-approvers")
+			for _, n := range []string{approverName, secondApprover, fileModeApprover} {
+				cmd := exec.Command("kubectl", "delete", "headscaleautoapprover", n,
+					"-n", testNamespace, "--ignore-not-found=true", "--timeout=60s")
+				_, _ = utils.Run(cmd)
+			}
+
+			By("cleaning up Headscale instances")
+			for _, n := range []string{headscaleName, fileModeHeadscale} {
+				cmd := exec.Command("kubectl", "delete", "headscale", n,
+					"-n", testNamespace, "--ignore-not-found=true", "--timeout=60s")
+				_, _ = utils.Run(cmd)
+			}
+		})
+
+		It("should merge auto-approvers into the active Headscale policy and re-render on delete", func() {
+			By("creating a Headscale instance with policy.mode=database and a base ACL inline")
+			// The Inline base seeds acls (so Headscale will accept the policy), tag_owners
+			// declares the tag the auto-approver references. The reconciler merges the
+			// auto-approver's autoApprovers section on top before pushing via SetPolicy.
+			headscaleYAML := fmt.Sprintf(`
+apiVersion: headscale.infrado.cloud/v1beta1
+kind: Headscale
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  version: "v0.28.0"
+  replicas: 1
+  config:
+    server_url: http://headscale.local
+    grpc_allow_insecure: true
+    derp:
+      server:
+        enabled: false
+    disable_check_updates: true
+    database:
+      type: sqlite
+    dns:
+      magic_dns: false
+    policy:
+      mode: database
+  api_key:
+    auto_manage: true
+    expiration: "24h"
+    rotation_buffer: "1h"
+  acl_policy:
+    tag_owners:
+      "tag:router": ["group:admin"]
+      "tag:exit": ["group:admin"]
+    inline: |
+      {
+        "groups": {"group:admin": ["e2e-admin@e2e"]},
+        "acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}]
+      }
+`, headscaleName, testNamespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(headscaleYAML)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create Headscale CR")
+
+			By("waiting for Headscale to be ready")
+			waitHeadscaleReady(headscaleName)
+
+			By("creating a HeadscaleAutoApprover with one route and an exit-node tag")
+			approverYAML := fmt.Sprintf(`
+apiVersion: headscale.infrado.cloud/v1beta1
+kind: HeadscaleAutoApprover
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  headscaleRef: %s
+  routes:
+    - cidr: 10.10.0.0/16
+      tags: ["tag:router"]
+  exitNodeTags: ["tag:exit"]
+`, approverName, testNamespace, headscaleName)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(approverYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create HeadscaleAutoApprover CR")
+
+			By("waiting for the auto-approver to report Ready=True with reason PolicyApplied")
+			Eventually(func(g Gomega) {
+				status := getApproverConditionField(g, approverName, "status")
+				reason := getApproverConditionField(g, approverName, "reason")
+				g.Expect(status).To(Equal("True"))
+				g.Expect(reason).To(Equal("PolicyApplied"))
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("verifying the active Headscale policy contains the auto-approver entries and the inline base")
+			Eventually(func(g Gomega) {
+				policy := getActivePolicy(g, headscaleName)
+				g.Expect(policy).To(HaveKey("autoApprovers"))
+				auto, ok := policy["autoApprovers"].(map[string]any)
+				g.Expect(ok).To(BeTrue(), "autoApprovers should be an object")
+				routes, ok := auto["routes"].(map[string]any)
+				g.Expect(ok).To(BeTrue(), "autoApprovers.routes should be an object")
+				g.Expect(routes).To(HaveKey("10.10.0.0/16"))
+				g.Expect(routes["10.10.0.0/16"]).To(ContainElement("tag:router"))
+				g.Expect(auto["exitNode"]).To(ContainElement("tag:exit"))
+
+				g.Expect(policy).To(HaveKey("tagOwners"))
+				tagOwners, ok := policy["tagOwners"].(map[string]any)
+				g.Expect(ok).To(BeTrue())
+				g.Expect(tagOwners).To(HaveKey("tag:router"))
+
+				g.Expect(policy).To(HaveKey("acls"), "acls from acl_policy.inline must survive the merge")
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("creating a second auto-approver targeting a different CIDR")
+			approver2YAML := fmt.Sprintf(`
+apiVersion: headscale.infrado.cloud/v1beta1
+kind: HeadscaleAutoApprover
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  headscaleRef: %s
+  routes:
+    - cidr: 192.168.0.0/16
+      tags: ["tag:router"]
+`, secondApprover, testNamespace, headscaleName)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(approver2YAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying both auto-approver routes appear in the merged policy")
+			Eventually(func(g Gomega) {
+				policy := getActivePolicy(g, headscaleName)
+				auto, _ := policy["autoApprovers"].(map[string]any)
+				routes, _ := auto["routes"].(map[string]any)
+				g.Expect(routes).To(HaveKey("10.10.0.0/16"))
+				g.Expect(routes).To(HaveKey("192.168.0.0/16"))
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("deleting the second auto-approver")
+			cmd = exec.Command("kubectl", "delete", "headscaleautoapprover", secondApprover,
+				"-n", testNamespace, "--timeout=60s")
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the merged policy no longer contains the deleted route")
+			Eventually(func(g Gomega) {
+				policy := getActivePolicy(g, headscaleName)
+				auto, _ := policy["autoApprovers"].(map[string]any)
+				routes, _ := auto["routes"].(map[string]any)
+				g.Expect(routes).NotTo(HaveKey("192.168.0.0/16"))
+				g.Expect(routes).To(HaveKey("10.10.0.0/16"), "remaining approver's route should still be present")
+			}, 1*time.Minute, 2*time.Second).Should(Succeed())
+		})
+
+		It("should report PolicyModeUnsupported when the parent Headscale uses file mode", func() {
+			By("creating a Headscale instance with the default policy.mode=file")
+			headscaleYAML := fmt.Sprintf(`
+apiVersion: headscale.infrado.cloud/v1beta1
+kind: Headscale
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  version: "v0.28.0"
+  replicas: 1
+  config:
+    server_url: http://headscale.local
+    grpc_allow_insecure: true
+    derp:
+      server:
+        enabled: false
+    disable_check_updates: true
+    database:
+      type: sqlite
+    dns:
+      magic_dns: false
+  api_key:
+    auto_manage: true
+    expiration: "24h"
+    rotation_buffer: "1h"
+`, fileModeHeadscale, testNamespace)
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(headscaleYAML)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("waiting for the file-mode Headscale to be ready")
+			waitHeadscaleReady(fileModeHeadscale)
+
+			By("creating a HeadscaleAutoApprover targeting the file-mode Headscale")
+			approverYAML := fmt.Sprintf(`
+apiVersion: headscale.infrado.cloud/v1beta1
+kind: HeadscaleAutoApprover
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  headscaleRef: %s
+  routes:
+    - cidr: 10.0.0.0/8
+      tags: ["tag:router"]
+`, fileModeApprover, testNamespace, fileModeHeadscale)
+			cmd = exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(approverYAML)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the auto-approver reports Ready=False with reason PolicyModeUnsupported")
+			Eventually(func(g Gomega) {
+				status := getApproverConditionField(g, fileModeApprover, "status")
+				reason := getApproverConditionField(g, fileModeApprover, "reason")
+				g.Expect(status).To(Equal("False"))
+				g.Expect(reason).To(Equal("PolicyModeUnsupported"))
+			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+		})
+	})
 })
+
+// waitHeadscaleReady blocks until the named Headscale CR reports Ready=True.
+func waitHeadscaleReady(name string) {
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "get", "headscale", name,
+			"-n", testNamespace,
+			"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
+		output, err := utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(output).To(Equal("True"))
+	}, 3*time.Minute, 2*time.Second).Should(Succeed())
+}
+
+// getApproverConditionField returns one field of the Ready condition (status / reason / message).
+func getApproverConditionField(g Gomega, name, field string) string {
+	cmd := exec.Command("kubectl", "get", "headscaleautoapprover", name,
+		"-n", testNamespace,
+		"-o", fmt.Sprintf("jsonpath={.status.conditions[?(@.type=='Ready')].%s}", field))
+	out, err := utils.Run(cmd)
+	g.Expect(err).NotTo(HaveOccurred())
+	return out
+}
+
+// getActivePolicy returns the parsed JSON policy currently stored in the Headscale
+// instance, fetched via `headscale policy get` inside the pod.
+func getActivePolicy(g Gomega, headscaleName string) map[string]any {
+	pod, err := getHeadscalePodName(testNamespace, headscaleName)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	cmd := exec.Command("kubectl", "exec", "-n", testNamespace, pod, "--",
+		"headscale", "policy", "get", "-o", "json")
+	output, err := utils.Run(cmd)
+	g.Expect(err).NotTo(HaveOccurred(), "headscale policy get failed: %s", output)
+
+	var parsed map[string]any
+	g.Expect(json.Unmarshal([]byte(output), &parsed)).To(Succeed(), "policy output not valid JSON: %s", output)
+	return parsed
+}
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
 // It uses the Kubernetes TokenRequest API to generate a token by directly sending a request

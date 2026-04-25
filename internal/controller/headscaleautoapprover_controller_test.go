@@ -1,0 +1,150 @@
+/*
+Copyright 2025.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package controller
+
+import (
+	"context"
+	"encoding/json"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	headscalev1beta1 "github.com/infradohq/headscale-operator/api/v1beta1"
+)
+
+var _ = Describe("HeadscaleAutoApprover Controller", func() {
+	Context("When reconciling a resource without a parent Headscale", func() {
+		const resourceName = "test-autoapprover"
+		const namespace = "default"
+
+		ctx := context.Background()
+
+		typeNamespacedName := types.NamespacedName{
+			Name:      resourceName,
+			Namespace: namespace,
+		}
+		approver := &headscalev1beta1.HeadscaleAutoApprover{}
+
+		BeforeEach(func() {
+			err := k8sClient.Get(ctx, typeNamespacedName, approver)
+			if err != nil && errors.IsNotFound(err) {
+				resource := &headscalev1beta1.HeadscaleAutoApprover{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      resourceName,
+						Namespace: namespace,
+					},
+					Spec: headscalev1beta1.HeadscaleAutoApproverSpec{
+						HeadscaleRef: "missing-headscale",
+						Routes: []headscalev1beta1.AutoApproverRoute{
+							{CIDR: "10.0.0.0/8", Tags: []string{"tag:router"}},
+						},
+					},
+				}
+				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			}
+		})
+
+		AfterEach(func() {
+			resource := &headscalev1beta1.HeadscaleAutoApprover{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, resource)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+		})
+
+		It("should set Ready=False with HeadscaleNotFound when the parent is missing", func() {
+			r := &HeadscaleAutoApproverReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			res, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+
+			updated := &headscalev1beta1.HeadscaleAutoApprover{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
+			cond := findCondition(updated.Status.Conditions, "Ready")
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("HeadscaleNotFound"))
+		})
+	})
+})
+
+var _ = Describe("buildPolicyDocument", func() {
+	It("merges the inline base, tag owners, and approver entries deterministically", func() {
+		base := &headscalev1beta1.ACLPolicyConfig{
+			TagOwners: map[string][]string{
+				"tag:router": {"group:admin"},
+			},
+			Inline: `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`,
+		}
+		approvers := []headscalev1beta1.HeadscaleAutoApprover{
+			{
+				Spec: headscalev1beta1.HeadscaleAutoApproverSpec{
+					Routes: []headscalev1beta1.AutoApproverRoute{
+						{CIDR: "10.0.0.0/8", Tags: []string{"tag:router"}},
+					},
+					ExitNodeTags: []string{"tag:exit"},
+				},
+			},
+			{
+				Spec: headscalev1beta1.HeadscaleAutoApproverSpec{
+					Routes: []headscalev1beta1.AutoApproverRoute{
+						{CIDR: "10.0.0.0/8", Tags: []string{"tag:router"}}, // duplicate
+						{CIDR: "192.168.0.0/16", Tags: []string{"tag:router"}},
+					},
+				},
+			},
+		}
+
+		out, err := buildPolicyDocument(base, approvers)
+		Expect(err).NotTo(HaveOccurred())
+
+		var parsed map[string]any
+		Expect(json.Unmarshal([]byte(out), &parsed)).To(Succeed())
+
+		Expect(parsed).To(HaveKey("acls"))
+		Expect(parsed).To(HaveKey("tagOwners"))
+
+		auto, ok := parsed["autoApprovers"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		routes, ok := auto["routes"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(routes).To(HaveKey("10.0.0.0/8"))
+		Expect(routes).To(HaveKey("192.168.0.0/16"))
+		// Duplicate tag must not be repeated.
+		Expect(routes["10.0.0.0/8"]).To(HaveLen(1))
+		Expect(auto["exitNode"]).To(ContainElement("tag:exit"))
+	})
+
+	It("returns an error when inline base is invalid JSON", func() {
+		_, err := buildPolicyDocument(&headscalev1beta1.ACLPolicyConfig{Inline: "not json"}, nil)
+		Expect(err).To(HaveOccurred())
+	})
+})
+
+func findCondition(conds []metav1.Condition, t string) *metav1.Condition {
+	for i := range conds {
+		if conds[i].Type == t {
+			return &conds[i]
+		}
+	}
+	return nil
+}

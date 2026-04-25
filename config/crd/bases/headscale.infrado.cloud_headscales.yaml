@@ -41,6 +41,31 @@ spec:
           spec:
             description: spec defines the desired state of Headscale
             properties:
+              acl_policy:
+                description: |-
+                  ACLPolicy is the base ACL policy and tag ownership map. The operator
+                  merges this with any HeadscaleAutoApprover resources that reference this
+                  Headscale and pushes the result via the gRPC SetPolicy API.
+                  Requires `spec.config.policy.mode=database`.
+                properties:
+                  inline:
+                    description: |-
+                      Inline is a JSON or HuJSON Headscale policy document that serves as the
+                      base policy. The operator parses it, merges TagOwners and any
+                      HeadscaleAutoApprover entries on top, then pushes the result via
+                      the gRPC API. Use this for `acls`, `groups`, `hosts`, and `ssh` rules.
+                    type: string
+                  tag_owners:
+                    additionalProperties:
+                      items:
+                        type: string
+                      type: array
+                    description: |-
+                      TagOwners maps tag names to the list of users or groups that may apply
+                      that tag (e.g. {"tag:router": ["group:admin"]}). Tags referenced by
+                      HeadscaleAutoApprover resources must be declared here.
+                    type: object
+                type: object
               api_key:
                 description: APIKey configuration for automatic API key management
                 properties:

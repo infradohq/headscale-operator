@@ -701,6 +701,29 @@ type APIKeyConfig struct {
 	ManagerImage string `json:"manager_image,omitempty"`
 }
 
+// ACLPolicyConfig defines the ACL policy that the operator pushes to Headscale
+// via the gRPC SetPolicy API. The operator merges TagOwners and any
+// HeadscaleAutoApprover entries on top of the Inline base before pushing.
+//
+// Using this requires `spec.config.policy.mode=database` because Headscale's
+// SetPolicy API is only available in database-mode. The HeadscaleAutoApprover
+// reconciler will surface a status condition on each auto-approver if the mode
+// is not set correctly.
+type ACLPolicyConfig struct {
+	// TagOwners maps tag names to the list of users or groups that may apply
+	// that tag (e.g. {"tag:router": ["group:admin"]}). Tags referenced by
+	// HeadscaleAutoApprover resources must be declared here.
+	// +optional
+	TagOwners map[string][]string `json:"tag_owners,omitempty"`
+
+	// Inline is a JSON or HuJSON Headscale policy document that serves as the
+	// base policy. The operator parses it, merges TagOwners and any
+	// HeadscaleAutoApprover entries on top, then pushes the result via
+	// the gRPC API. Use this for `acls`, `groups`, `hosts`, and `ssh` rules.
+	// +optional
+	Inline string `json:"inline,omitempty"`
+}
+
 // HeadscaleSpec defines the desired state of Headscale
 type HeadscaleSpec struct {
 	// Version indicates the version of Headscale to deploy.
@@ -746,6 +769,13 @@ type HeadscaleSpec struct {
 	// ExtraVolumeMounts allows adding additional volume mounts to the Headscale container
 	// +optional
 	ExtraVolumeMounts []corev1.VolumeMount `json:"extra_volume_mounts,omitempty"`
+
+	// ACLPolicy is the base ACL policy and tag ownership map. The operator
+	// merges this with any HeadscaleAutoApprover resources that reference this
+	// Headscale and pushes the result via the gRPC SetPolicy API.
+	// Requires `spec.config.policy.mode=database`.
+	// +optional
+	ACLPolicy ACLPolicyConfig `json:"acl_policy"`
 }
 
 // HeadscaleStatus defines the observed state of Headscale.

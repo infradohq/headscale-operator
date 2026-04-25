@@ -268,3 +268,24 @@ func (c *Client) DeletePreAuthKey(ctx context.Context, id uint64) error {
 
 	return nil
 }
+
+// SetPolicy pushes a JSON/HuJSON policy document to Headscale. Requires the
+// server to be running with `policy.mode = database`; against a file-mode
+// instance Headscale rejects the call.
+func (c *Client) SetPolicy(ctx context.Context, policy string) error {
+	_, err := c.client.SetPolicy(ctx, &v1.SetPolicyRequest{Policy: policy})
+	if err != nil {
+		return fmt.Errorf("failed to set policy: %w", err)
+	}
+	return nil
+}
+
+// GetPolicy returns the policy document currently stored in Headscale's
+// database. Like SetPolicy, this requires `policy.mode = database`.
+func (c *Client) GetPolicy(ctx context.Context) (string, error) {
+	resp, err := c.client.GetPolicy(ctx, &v1.GetPolicyRequest{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get policy: %w", err)
+	}
+	return resp.GetPolicy(), nil
+}

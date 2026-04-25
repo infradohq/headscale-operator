@@ -1,0 +1,18 @@
+apiVersion: headscale.infrado.cloud/v1beta1
+kind: HeadscaleAutoApprover
+metadata:
+  labels:
+    app.kubernetes.io/name: headscale-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: k8s-network
+spec:
+  # The Headscale instance whose ACL policy this resource contributes to.
+  # The Headscale must be configured with spec.config.policy.mode=database
+  # and must declare each referenced tag in spec.acl_policy.tag_owners.
+  headscaleRef: headscale-sample
+  routes:
+    - cidr: 10.0.0.0/8
+      tags:
+        - tag:router
+  exitNodeTags:
+    - tag:exit
