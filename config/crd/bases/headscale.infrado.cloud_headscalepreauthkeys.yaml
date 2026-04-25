@@ -30,6 +30,12 @@ spec:
     - jsonPath: .spec.ephemeral
       name: Ephemeral
       type: boolean
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Status
+      type: string
+    - jsonPath: .status.expiresAt
+      name: ExpiresAt
+      type: date
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -173,6 +179,12 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              expiresAt:
+                description: |-
+                  ExpiresAt is the absolute time when the preauth key expires.
+                  Computed by the controller from spec.Expiration at key creation time.
+                format: date-time
+                type: string
               keyId:
                 description: KeyID is the ID of the preauth key in Headscale
                 type: string

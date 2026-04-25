@@ -74,6 +74,11 @@ type HeadscalePreAuthKeyStatus struct {
 	// +optional
 	KeyID string `json:"keyId,omitempty"`
 
+	// ExpiresAt is the absolute time when the preauth key expires.
+	// Computed by the controller from spec.Expiration at key creation time.
+	// +optional
+	ExpiresAt *metav1.Time `json:"expiresAt,omitempty"`
+
 	// conditions represent the current state of the HeadscalePreAuthKey resource.
 	// +listType=map
 	// +listMapKey=type
@@ -88,6 +93,8 @@ type HeadscalePreAuthKeyStatus struct {
 // +kubebuilder:printcolumn:name="UserID",type=integer,JSONPath=`.spec.userId`
 // +kubebuilder:printcolumn:name="Reusable",type=boolean,JSONPath=`.spec.reusable`
 // +kubebuilder:printcolumn:name="Ephemeral",type=boolean,JSONPath=`.spec.ephemeral`
+// +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.conditions[?(@.type=='Ready')].status`
+// +kubebuilder:printcolumn:name="ExpiresAt",type=date,JSONPath=`.status.expiresAt`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:validation:XValidation:rule="(has(self.spec.headscaleUserRef) && self.spec.headscaleUserRef != \"\") != (has(self.spec.userId) && self.spec.userId != 0)",message="exactly one of spec.headscaleUserRef or spec.userId must be specified"
 

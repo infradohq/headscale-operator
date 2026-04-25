@@ -820,6 +820,134 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 			By("Cleaning up the test resource")
 			Expect(k8sClient.Delete(ctx, preAuthKey)).To(Succeed())
 		})
+
+		It("should set Ready=False when preauth key has expired", func() {
+			By("Creating a HeadscalePreAuthKey")
+			preAuthKey := &headscalev1beta1.HeadscalePreAuthKey{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName + "-expired",
+					Namespace: namespace,
+				},
+				Spec: headscalev1beta1.HeadscalePreAuthKeySpec{
+					HeadscaleRef:     headscaleName,
+					HeadscaleUserRef: headscaleUserName,
+					Expiration:       "1h",
+				},
+			}
+			Expect(k8sClient.Create(ctx, preAuthKey)).To(Succeed())
+
+			expiredNamespacedName := types.NamespacedName{
+				Name:      resourceName + "-expired",
+				Namespace: namespace,
+			}
+
+			By("Setting KeyID and ExpiresAt in the past to simulate an expired key")
+			expiredTime := metav1.NewTime(time.Now().Add(-1 * time.Hour))
+			Eventually(func() error {
+				err := k8sClient.Get(ctx, expiredNamespacedName, preAuthKey)
+				if err != nil {
+					return err
+				}
+				preAuthKey.Status.KeyID = "789"
+				preAuthKey.Status.ExpiresAt = &expiredTime
+				return k8sClient.Status().Update(ctx, preAuthKey)
+			}, timeout, interval).Should(Succeed())
+
+			By("Reconciling the resource")
+			controllerReconciler := &HeadscalePreAuthKeyReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: expiredNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking that the status reflects the expired key")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, expiredNamespacedName, preAuthKey)
+				if err != nil {
+					return false
+				}
+				for _, condition := range preAuthKey.Status.Conditions {
+					if condition.Type == readyConditionType &&
+						condition.Status == metav1.ConditionFalse &&
+						condition.Reason == "KeyExpired" {
+						return true
+					}
+				}
+				return false
+			}, timeout, interval).Should(BeTrue())
+
+			By("Cleaning up the test resource")
+			Expect(k8sClient.Delete(ctx, preAuthKey)).To(Succeed())
+		})
+
+		It("should requeue before expiration for active preauth key", func() {
+			By("Creating a HeadscalePreAuthKey")
+			preAuthKey := &headscalev1beta1.HeadscalePreAuthKey{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName + "-active",
+					Namespace: namespace,
+				},
+				Spec: headscalev1beta1.HeadscalePreAuthKeySpec{
+					HeadscaleRef:     headscaleName,
+					HeadscaleUserRef: headscaleUserName,
+					Expiration:       "1h",
+				},
+			}
+			Expect(k8sClient.Create(ctx, preAuthKey)).To(Succeed())
+
+			activeNamespacedName := types.NamespacedName{
+				Name:      resourceName + "-active",
+				Namespace: namespace,
+			}
+
+			By("Setting KeyID and ExpiresAt in the future to simulate an active key")
+			futureTime := metav1.NewTime(time.Now().Add(1 * time.Hour))
+			Eventually(func() error {
+				err := k8sClient.Get(ctx, activeNamespacedName, preAuthKey)
+				if err != nil {
+					return err
+				}
+				preAuthKey.Status.KeyID = "789"
+				preAuthKey.Status.ExpiresAt = &futureTime
+				return k8sClient.Status().Update(ctx, preAuthKey)
+			}, timeout, interval).Should(Succeed())
+
+			By("Reconciling the resource")
+			controllerReconciler := &HeadscalePreAuthKeyReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			result, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: activeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking that reconcile requested requeue before expiration")
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+
+			By("Checking that the status is Ready=True")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, activeNamespacedName, preAuthKey)
+				if err != nil {
+					return false
+				}
+				for _, condition := range preAuthKey.Status.Conditions {
+					if condition.Type == readyConditionType &&
+						condition.Status == metav1.ConditionTrue {
+						return true
+					}
+				}
+				return false
+			}, timeout, interval).Should(BeTrue())
+
+			By("Cleaning up the test resource")
+			Expect(k8sClient.Delete(ctx, preAuthKey)).To(Succeed())
+		})
 	})
 
 	Context("Helper function tests", func() {

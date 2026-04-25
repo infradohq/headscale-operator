@@ -205,16 +205,7 @@ func (r *HeadscalePreAuthKeyReconciler) Reconcile(ctx context.Context, req ctrl.
 
 	// Check if the preauth key already exists
 	if preAuthKey.Status.KeyID != "" {
-		// PreAuth key already created
-		if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-			Type:    "Ready",
-			Status:  metav1.ConditionTrue,
-			Reason:  "PreAuthKeyReady",
-			Message: "PreAuth key is ready",
-		}); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, nil
+		return r.reconcileExistingKey(ctx, preAuthKey)
 	}
 
 	// Create the preauth key in Headscale
@@ -247,6 +238,43 @@ func (r *HeadscalePreAuthKeyReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 	log.Info("Successfully created preauth key", "UserInfo", userRefInfo)
 	return ctrl.Result{}, nil
+}
+
+// reconcileExistingKey handles reconciliation when a preauth key already exists (KeyID is set).
+// It checks expiration status and requeues before expiration for active keys.
+func (r *HeadscalePreAuthKeyReconciler) reconcileExistingKey(
+	ctx context.Context,
+	preAuthKey *headscalev1beta1.HeadscalePreAuthKey,
+) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	if preAuthKey.Status.ExpiresAt != nil && time.Now().After(preAuthKey.Status.ExpiresAt.Time) {
+		log.Info("PreAuth key has expired", "keyID", preAuthKey.Status.KeyID, "expiresAt", preAuthKey.Status.ExpiresAt.Time)
+		if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
+			Type:    "Ready",
+			Status:  metav1.ConditionFalse,
+			Reason:  "KeyExpired",
+			Message: fmt.Sprintf("PreAuth key expired at %s", preAuthKey.Status.ExpiresAt.Format(time.RFC3339)),
+		}); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Key is ready, requeue before expiration if ExpiresAt is set
+	var requeueAfter time.Duration
+	if preAuthKey.Status.ExpiresAt != nil {
+		requeueAfter = time.Until(preAuthKey.Status.ExpiresAt.Time)
+	}
+	if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
+		Type:    "Ready",
+		Status:  metav1.ConditionTrue,
+		Reason:  "PreAuthKeyReady",
+		Message: "PreAuth key is ready",
+	}); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
 // handleDeletion handles the deletion of a HeadscalePreAuthKey instance
@@ -459,6 +487,8 @@ func (r *HeadscalePreAuthKeyReconciler) createPreAuthKey(
 
 	// Update status with preauth key information
 	preAuthKey.Status.KeyID = strconv.FormatUint(key.GetId(), 10)
+	expiresAt := metav1.NewTime(time.Now().Add(expiration))
+	preAuthKey.Status.ExpiresAt = &expiresAt
 
 	if err := r.Status().Update(ctx, preAuthKey); err != nil {
 		return fmt.Errorf("failed to update HeadscalePreAuthKey status: %w", err)
