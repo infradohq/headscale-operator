@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,8 +33,12 @@ import (
 
 var _ = Describe("HeadscaleAutoApprover Controller", func() {
 	Context("When reconciling a resource without a parent Headscale", func() {
-		const resourceName = "test-autoapprover"
-		const namespace = "default"
+		const (
+			resourceName    = "test-autoapprover"
+			namespace       = "default"
+			cleanupTimeout  = 10 * time.Second
+			cleanupInterval = 250 * time.Millisecond
+		)
 
 		ctx := context.Background()
 
@@ -79,7 +84,7 @@ var _ = Describe("HeadscaleAutoApprover Controller", func() {
 
 			Eventually(func() bool {
 				return errors.IsNotFound(k8sClient.Get(ctx, typeNamespacedName, &headscalev1beta1.HeadscaleAutoApprover{}))
-			}).Should(BeTrue())
+			}, cleanupTimeout, cleanupInterval).Should(BeTrue())
 		})
 
 		It("should set Ready=False with HeadscaleNotFound when the parent is missing", func() {
