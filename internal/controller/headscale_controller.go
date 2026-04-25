@@ -75,7 +75,7 @@ func apiKeySecretNameFor(h *headscalev1beta1.Headscale) string {
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
@@ -165,8 +165,27 @@ func (r *HeadscaleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 func (r *HeadscaleReconciler) handleDeletion(ctx context.Context, headscale *headscalev1beta1.Headscale) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	if controllerutil.ContainsFinalizer(headscale, headscaleFinalizer) {
-		// Perform cleanup logic here if needed
 		log.Info("Performing cleanup for Headscale", "Name", headscale.Name)
+
+		// Delete the auto-managed API key secret. The apikey-manager sidecar
+		// creates this secret without an OwnerReference, so it would otherwise
+		// outlive the CR. Only the auto-managed case is cleaned up here; when
+		// AutoManage is disabled the secret is owned by the user.
+		autoManage := headscale.Spec.APIKey.AutoManage == nil || *headscale.Spec.APIKey.AutoManage
+		if autoManage {
+			secretName := apiKeySecretNameFor(headscale)
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      secretName,
+					Namespace: headscale.Namespace,
+				},
+			}
+			if err := r.Delete(ctx, secret); err != nil && !errors.IsNotFound(err) {
+				log.Error(err, "Failed to delete API key secret", "Name", secretName)
+				return ctrl.Result{}, err
+			}
+			log.Info("Deleted API key secret", "Namespace", headscale.Namespace, "Name", secretName)
+		}
 
 		// Remove finalizer
 		controllerutil.RemoveFinalizer(headscale, headscaleFinalizer)
