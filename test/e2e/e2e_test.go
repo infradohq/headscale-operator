@@ -966,11 +966,10 @@ spec:
     rotation_buffer: "1h"
   acl_policy:
     tag_owners:
-      "tag:router": ["group:admin"]
-      "tag:exit": ["group:admin"]
+      "tag:router": ["admin@e2e"]
+      "tag:exit": ["admin@e2e"]
     inline: |
       {
-        "groups": {"group:admin": ["e2e-admin@e2e"]},
         "acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}]
       }
 `, headscaleName, testNamespace)
@@ -1007,7 +1006,7 @@ spec:
 				reason := getApproverConditionField(g, approverName, "reason")
 				g.Expect(status).To(Equal("True"))
 				g.Expect(reason).To(Equal("PolicyApplied"))
-			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+			}, 3*time.Minute, 2*time.Second).Should(Succeed())
 
 			By("verifying the active Headscale policy contains the auto-approver entries and the inline base")
 			Eventually(func(g Gomega) {
@@ -1131,12 +1130,17 @@ spec:
 				reason := getApproverConditionField(g, fileModeApprover, "reason")
 				g.Expect(status).To(Equal("False"))
 				g.Expect(reason).To(Equal("PolicyModeUnsupported"))
-			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+			}, 3*time.Minute, 2*time.Second).Should(Succeed())
 		})
 	})
 })
 
-// waitHeadscaleReady blocks until the named Headscale CR reports Ready=True.
+// waitHeadscaleReady blocks until both the Headscale CR reports Ready=True AND
+// the underlying StatefulSet has a ready replica. The CR Ready condition flips
+// True as soon as the operator finishes creating child resources, which is well
+// before pods are serving and before the api-key secret has been written by the
+// sidecar — controllers that need to talk to Headscale via gRPC must wait for
+// the latter, not just the former.
 func waitHeadscaleReady(name string) {
 	Eventually(func(g Gomega) {
 		cmd := exec.Command("kubectl", "get", "headscale", name,
@@ -1146,6 +1150,22 @@ func waitHeadscaleReady(name string) {
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(output).To(Equal("True"))
 	}, 3*time.Minute, 2*time.Second).Should(Succeed())
+
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "get", "statefulset", name,
+			"-n", testNamespace, "-o", "jsonpath={.status.readyReplicas}")
+		output, err := utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(output).To(Equal("1"), "Headscale StatefulSet not ready")
+	}, 3*time.Minute, 2*time.Second).Should(Succeed())
+
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "get", "secret", name+"-api-key",
+			"-n", testNamespace, "-o", "jsonpath={.data.api-key}")
+		output, err := utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(output).NotTo(BeEmpty(), "api-key secret not yet populated by sidecar")
+	}, 2*time.Minute, 2*time.Second).Should(Succeed())
 }
 
 // getApproverConditionField returns one field of the Ready condition (status / reason / message).
@@ -1160,12 +1180,18 @@ func getApproverConditionField(g Gomega, name, field string) string {
 
 // getActivePolicy returns the parsed JSON policy currently stored in the Headscale
 // instance, fetched via `headscale policy get` inside the pod.
+//
+// NOTE: do NOT pass `-o json` here. The headscale CLI's `policy get` command
+// uses SuccessOutput("", policy, "") — meaning the policy document is in the
+// `override` argument, which is only printed when no -o flag is set. With
+// `-o json` the CLI marshals the empty `result` argument and prints `""`,
+// not the policy. The default output is already the raw JSON policy string.
 func getActivePolicy(g Gomega, headscaleName string) map[string]any {
 	pod, err := getHeadscalePodName(testNamespace, headscaleName)
 	g.Expect(err).NotTo(HaveOccurred())
 
 	cmd := exec.Command("kubectl", "exec", "-n", testNamespace, pod, "--",
-		"headscale", "policy", "get", "-o", "json")
+		"headscale", "policy", "get")
 	output, err := utils.Run(cmd)
 	g.Expect(err).NotTo(HaveOccurred(), "headscale policy get failed: %s", output)
 
