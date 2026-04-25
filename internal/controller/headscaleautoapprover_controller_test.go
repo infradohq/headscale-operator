@@ -94,7 +94,9 @@ var _ = Describe("HeadscaleAutoApprover Controller", func() {
 			}
 			res, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+			// No periodic requeue: a future Headscale Create event fires the
+			// watch and re-queues this approver via requeueApproversForHeadscale.
+			Expect(res).To(Equal(reconcile.Result{}))
 
 			updated := &headscalev1beta1.HeadscaleAutoApprover{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())

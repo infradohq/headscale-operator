@@ -20,8 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
-	"time"
 
 	"github.com/tailscale/hujson"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -45,6 +45,13 @@ import (
 const (
 	headscaleAutoApproverFinalizer = "headscale.infrado.cloud/autoapprover-finalizer"
 	policyModeDatabase             = "database"
+
+	// headscaleRefIndex names the field index on
+	// HeadscaleAutoApprover.spec.headscaleRef. Registered in SetupWithManager
+	// so collectApprovers and requeueApproversForHeadscale can fetch only the
+	// approvers targeting a given Headscale instead of listing the namespace
+	// and filtering client-side.
+	headscaleRefIndex = "spec.headscaleRef"
 )
 
 // HeadscaleAutoApproverReconciler reconciles a HeadscaleAutoApprover object
@@ -93,7 +100,10 @@ func (r *HeadscaleAutoApproverReconciler) Reconcile(ctx context.Context, req ctr
 			}); err != nil {
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			// No periodic requeue: the Watches() on Headscale fires Create
+			// events for new instances, which requeues every approver targeting
+			// them via requeueApproversForHeadscale.
+			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
@@ -110,7 +120,10 @@ func (r *HeadscaleAutoApproverReconciler) Reconcile(ctx context.Context, req ctr
 		}); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{RequeueAfter: time.Minute}, nil
+		// No periodic requeue: the GenerationChangedPredicate on the Headscale
+		// watch fires when the user flips policy.mode (a spec change), which
+		// requeues this approver.
+		return ctrl.Result{}, nil
 	}
 
 	if err := r.renderAndPush(ctx, headscale); err != nil {
@@ -246,21 +259,22 @@ func (r *HeadscaleAutoApproverReconciler) renderAndPush(
 }
 
 // collectApprovers returns every HeadscaleAutoApprover in the same namespace as
-// the Headscale that references it by name and is not being deleted.
+// the Headscale that targets it by name and is not being deleted. Uses the
+// spec.headscaleRef field index for server-side filtering.
 func (r *HeadscaleAutoApproverReconciler) collectApprovers(
 	ctx context.Context,
 	headscale *headscalev1beta1.Headscale,
 ) ([]headscalev1beta1.HeadscaleAutoApprover, error) {
 	list := &headscalev1beta1.HeadscaleAutoApproverList{}
-	if err := r.List(ctx, list, client.InNamespace(headscale.Namespace)); err != nil {
+	if err := r.List(ctx, list,
+		client.InNamespace(headscale.Namespace),
+		client.MatchingFields{headscaleRefIndex: headscale.Name},
+	); err != nil {
 		return nil, err
 	}
 
 	out := make([]headscalev1beta1.HeadscaleAutoApprover, 0, len(list.Items))
 	for _, item := range list.Items {
-		if item.Spec.HeadscaleRef != headscale.Name {
-			continue
-		}
 		if item.GetDeletionTimestamp() != nil {
 			continue
 		}
@@ -296,15 +310,15 @@ func (r *HeadscaleAutoApproverReconciler) requeueApproversForHeadscale(
 		return nil
 	}
 	list := &headscalev1beta1.HeadscaleAutoApproverList{}
-	if err := r.List(ctx, list, client.InNamespace(headscale.Namespace)); err != nil {
+	if err := r.List(ctx, list,
+		client.InNamespace(headscale.Namespace),
+		client.MatchingFields{headscaleRefIndex: headscale.Name},
+	); err != nil {
 		logf.FromContext(ctx).Error(err, "Failed to list HeadscaleAutoApprovers for Headscale watch")
 		return nil
 	}
 	requests := make([]reconcile.Request, 0, len(list.Items))
 	for _, item := range list.Items {
-		if item.Spec.HeadscaleRef != headscale.Name {
-			continue
-		}
 		requests = append(requests, reconcile.Request{
 			NamespacedName: types.NamespacedName{Name: item.Name, Namespace: item.Namespace},
 		})
@@ -314,6 +328,17 @@ func (r *HeadscaleAutoApproverReconciler) requeueApproversForHeadscale(
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *HeadscaleAutoApproverReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&headscalev1beta1.HeadscaleAutoApprover{},
+		headscaleRefIndex,
+		func(obj client.Object) []string {
+			return []string{obj.(*headscalev1beta1.HeadscaleAutoApprover).Spec.HeadscaleRef}
+		},
+	); err != nil {
+		return fmt.Errorf("failed to register %s field indexer: %w", headscaleRefIndex, err)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&headscalev1beta1.HeadscaleAutoApprover{}).
 		Watches(
@@ -366,7 +391,12 @@ func buildPolicyDocument(
 	if base != nil && len(base.TagOwners) > 0 {
 		owners := make(map[string]any, len(base.TagOwners))
 		for tag, principals := range base.TagOwners {
-			owners[tag] = principals
+			// Canonicalize: sort + dedupe so user-input ordering doesn't churn
+			// the rendered output and trip up SetPolicy idempotency.
+			sorted := append([]string(nil), principals...)
+			sort.Strings(sorted)
+			sorted = slices.Compact(sorted)
+			owners[tag] = sorted
 		}
 		doc[policyKeyTagOwners] = owners
 	}
