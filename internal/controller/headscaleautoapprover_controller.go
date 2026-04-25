@@ -138,15 +138,23 @@ func (r *HeadscaleAutoApproverReconciler) Reconcile(ctx context.Context, req ctr
 	return ctrl.Result{}, nil
 }
 
-// handleDeletion removes the finalizer after re-pushing the policy without this
-// resource's contributions. If the parent Headscale is gone (NotFound) we just
-// drop the finalizer — the policy lives with Headscale and there is nothing to
-// clean up. Other lookup or push errors keep the finalizer in place and requeue
-// so the cleanup is not silently skipped.
+// handleDeletion attempts to re-push the merged policy without this resource's
+// contributions, then removes the finalizer.
+//
+// Cleanup is best-effort: a failed lookup or push is logged but does not block
+// finalizer removal. Blocking would risk leaving the CR stuck Terminating
+// forever (e.g., Headscale is down for an extended period, or the user pushed
+// an invalid base policy that makes SetPolicy persistently reject), and the
+// only on-disk consequence of skipping the re-push is some stale entries in
+// the active policy. Those entries are inert — no node carries the deleted
+// tag anymore — and they are cleaned up the next time any sibling approver
+// reconciles (collectApprovers excludes the deleted one).
 func (r *HeadscaleAutoApproverReconciler) handleDeletion(
 	ctx context.Context,
 	approver *headscalev1beta1.HeadscaleAutoApprover,
 ) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
 	if !controllerutil.ContainsFinalizer(approver, headscaleAutoApproverFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -156,13 +164,10 @@ func (r *HeadscaleAutoApproverReconciler) handleDeletion(
 	case apierrors.IsNotFound(err):
 		// Parent already gone — nothing to re-push.
 	case err != nil:
-		// Transient API error: keep finalizer, let the rate-limited workqueue retry.
-		return ctrl.Result{}, fmt.Errorf("failed to fetch parent Headscale during deletion: %w", err)
+		log.Error(err, "Failed to fetch parent Headscale during deletion; proceeding with finalizer removal")
 	case headscale.Spec.Config.Policy.Mode == policyModeDatabase:
-		// Re-push policy excluding this resource. The list-and-render path naturally
-		// excludes objects with a deletion timestamp (see collectApprovers).
 		if err := r.renderAndPush(ctx, headscale); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to re-push policy during deletion: %w", err)
+			log.Error(err, "Failed to re-push policy during deletion; proceeding with finalizer removal")
 		}
 	}
 
