@@ -64,8 +64,22 @@ var _ = Describe("HeadscaleAutoApprover Controller", func() {
 
 		AfterEach(func() {
 			resource := &headscalev1beta1.HeadscaleAutoApprover{}
-			Expect(k8sClient.Get(ctx, typeNamespacedName, resource)).To(Succeed())
+			if err := k8sClient.Get(ctx, typeNamespacedName, resource); err != nil {
+				return
+			}
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+
+			// Reconcile installs a finalizer; envtest has no live controller, so we
+			// drive the deletion path ourselves to actually evict the object and
+			// keep the test isolated from subsequent specs. This also exercises
+			// handleDeletion with a missing parent Headscale.
+			r := &HeadscaleAutoApproverReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: typeNamespacedName})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() bool {
+				return errors.IsNotFound(k8sClient.Get(ctx, typeNamespacedName, &headscalev1beta1.HeadscaleAutoApprover{}))
+			}).Should(BeTrue())
 		})
 
 		It("should set Ready=False with HeadscaleNotFound when the parent is missing", func() {

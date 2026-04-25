@@ -74,18 +74,17 @@ func (r *HeadscaleAutoApproverReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, err
 	}
 
-	headscale, hsErr := r.getHeadscale(ctx, approver)
-
 	if approver.GetDeletionTimestamp() != nil {
-		return r.handleDeletion(ctx, approver, headscale)
+		return r.handleDeletion(ctx, approver)
 	}
 
 	if err := r.ensureFinalizer(ctx, approver); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if hsErr != nil {
-		if apierrors.IsNotFound(hsErr) {
+	headscale, err := r.getHeadscale(ctx, approver)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
 			if err := r.setCondition(ctx, approver, metav1.Condition{
 				Type:    "Ready",
 				Status:  metav1.ConditionFalse,
@@ -96,7 +95,7 @@ func (r *HeadscaleAutoApproverReconciler) Reconcile(ctx context.Context, req ctr
 			}
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
-		return ctrl.Result{}, hsErr
+		return ctrl.Result{}, err
 	}
 
 	if headscale.Spec.Config.Policy.Mode != policyModeDatabase {
@@ -140,25 +139,30 @@ func (r *HeadscaleAutoApproverReconciler) Reconcile(ctx context.Context, req ctr
 }
 
 // handleDeletion removes the finalizer after re-pushing the policy without this
-// resource's contributions. If the parent Headscale is gone we just drop the
-// finalizer — the policy lives with Headscale and there is nothing to clean up.
+// resource's contributions. If the parent Headscale is gone (NotFound) we just
+// drop the finalizer — the policy lives with Headscale and there is nothing to
+// clean up. Other lookup or push errors keep the finalizer in place and requeue
+// so the cleanup is not silently skipped.
 func (r *HeadscaleAutoApproverReconciler) handleDeletion(
 	ctx context.Context,
 	approver *headscalev1beta1.HeadscaleAutoApprover,
-	headscale *headscalev1beta1.Headscale,
 ) (ctrl.Result, error) {
-	log := logf.FromContext(ctx)
-
 	if !controllerutil.ContainsFinalizer(approver, headscaleAutoApproverFinalizer) {
 		return ctrl.Result{}, nil
 	}
 
-	// Re-push policy excluding this resource. The list-and-render path naturally
-	// excludes objects with a deletion timestamp (see collectApprovers).
-	if headscale != nil && headscale.Spec.Config.Policy.Mode == policyModeDatabase {
+	headscale, err := r.getHeadscale(ctx, approver)
+	switch {
+	case apierrors.IsNotFound(err):
+		// Parent already gone — nothing to re-push.
+	case err != nil:
+		// Transient API error: keep finalizer, let the rate-limited workqueue retry.
+		return ctrl.Result{}, fmt.Errorf("failed to fetch parent Headscale during deletion: %w", err)
+	case headscale.Spec.Config.Policy.Mode == policyModeDatabase:
+		// Re-push policy excluding this resource. The list-and-render path naturally
+		// excludes objects with a deletion timestamp (see collectApprovers).
 		if err := r.renderAndPush(ctx, headscale); err != nil {
-			log.Error(err, "Failed to re-push policy during deletion; will retry")
-			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			return ctrl.Result{}, fmt.Errorf("failed to re-push policy during deletion: %w", err)
 		}
 	}
 
