@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -326,6 +327,25 @@ func (r *HeadscaleAutoApproverReconciler) requeueApproversForHeadscale(
 	return requests
 }
 
+// reconcilableUpdates filters Update events on the For() watch so the
+// controller only reconciles on changes that actually require work: spec edits
+// (generation bumps) and deletion-timestamp transitions. Status-only patches
+// (our own setCondition writes) and finalizer-only edits (our own
+// ensureFinalizer writes) are filtered out so we don't re-push the policy in
+// response to the controller's own writes — without this, a single user
+// `kubectl apply` triggers 3-4 redundant SetPolicy round-trips.
+var reconcilableUpdates = predicate.Funcs{
+	UpdateFunc: func(e event.UpdateEvent) bool {
+		if e.ObjectOld == nil || e.ObjectNew == nil {
+			return false
+		}
+		if e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration() {
+			return true
+		}
+		return !e.ObjectOld.GetDeletionTimestamp().Equal(e.ObjectNew.GetDeletionTimestamp())
+	},
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *HeadscaleAutoApproverReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(
@@ -340,7 +360,9 @@ func (r *HeadscaleAutoApproverReconciler) SetupWithManager(mgr ctrl.Manager) err
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&headscalev1beta1.HeadscaleAutoApprover{}).
+		For(&headscalev1beta1.HeadscaleAutoApprover{},
+			builder.WithPredicates(reconcilableUpdates),
+		).
 		Watches(
 			&headscalev1beta1.Headscale{},
 			handler.EnqueueRequestsFromMapFunc(r.requeueApproversForHeadscale),
