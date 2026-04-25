@@ -45,6 +45,7 @@ rules:
 - apiGroups:
   - headscale.infrado.cloud
   resources:
+  - headscaleautoapprovers
   - headscalepreauthkeys
   - headscales
   - headscaleusers
@@ -59,6 +60,7 @@ rules:
 - apiGroups:
   - headscale.infrado.cloud
   resources:
+  - headscaleautoapprovers/finalizers
   - headscalepreauthkeys/finalizers
   - headscales/finalizers
   - headscaleusers/finalizers
@@ -67,6 +69,7 @@ rules:
 - apiGroups:
   - headscale.infrado.cloud
   resources:
+  - headscaleautoapprovers/status
   - headscalepreauthkeys/status
   - headscales/status
   - headscaleusers/status
