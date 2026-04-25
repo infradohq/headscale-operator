@@ -138,6 +138,23 @@ var _ = Describe("buildPolicyDocument", func() {
 		_, err := buildPolicyDocument(&headscalev1beta1.ACLPolicyConfig{Inline: "not json"}, nil)
 		Expect(err).To(HaveOccurred())
 	})
+
+	It("accepts HuJSON (comments and trailing commas) in the inline base", func() {
+		base := &headscalev1beta1.ACLPolicyConfig{
+			Inline: `{
+				// Default-allow ACL while we figure out the real ones.
+				"acls": [
+					{"action": "accept", "src": ["*"], "dst": ["*:*"]},
+				],
+			}`,
+		}
+		out, err := buildPolicyDocument(base, nil)
+		Expect(err).NotTo(HaveOccurred())
+
+		var parsed map[string]any
+		Expect(json.Unmarshal([]byte(out), &parsed)).To(Succeed())
+		Expect(parsed).To(HaveKey("acls"))
+	})
 })
 
 func findCondition(conds []metav1.Condition, t string) *metav1.Condition {

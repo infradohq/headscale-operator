@@ -23,16 +23,19 @@ import (
 	"sort"
 	"time"
 
+	"github.com/tailscale/hujson"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	headscalev1beta1 "github.com/infradohq/headscale-operator/api/v1beta1"
@@ -120,7 +123,9 @@ func (r *HeadscaleAutoApproverReconciler) Reconcile(ctx context.Context, req ctr
 		}); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, fmt.Errorf("failed to push policy: %w", err)
+		// Returning the error is enough — controller-runtime ignores Result
+		// when err != nil and uses the rate-limited workqueue for backoff.
+		return ctrl.Result{}, fmt.Errorf("failed to push policy: %w", err)
 	}
 
 	if err := r.setCondition(ctx, approver, metav1.Condition{
@@ -305,6 +310,10 @@ func (r *HeadscaleAutoApproverReconciler) SetupWithManager(mgr ctrl.Manager) err
 		Watches(
 			&headscalev1beta1.Headscale{},
 			handler.EnqueueRequestsFromMapFunc(r.requeueApproversForHeadscale),
+			// Headscale CRs receive frequent status updates from their own
+			// reconciler; only rendering changes matter here, so filter to
+			// spec generation bumps to avoid re-pushing on every status flip.
+			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
 		).
 		Named("headscaleautoapprover").
 		Complete(r)
@@ -312,9 +321,10 @@ func (r *HeadscaleAutoApproverReconciler) SetupWithManager(mgr ctrl.Manager) err
 
 // policyDocument is the subset of the Headscale policy schema the operator
 // renders. Fields the user supplied via ACLPolicy.Inline (acls, groups, hosts,
-// ssh, ...) are preserved as-is via the inlinedFields map. The operator only
-// owns tagOwners and autoApprovers — it overwrites those keys, leaving every
-// other key untouched.
+// ssh, ...) are preserved as-is. The operator only owns tagOwners and
+// autoApprovers: when the operator has values for either it replaces that key
+// in the inline base; when it has none, any key the inline base supplied
+// passes through untouched.
 type policyDocument map[string]any
 
 const (
@@ -332,8 +342,15 @@ func buildPolicyDocument(
 ) (string, error) {
 	doc := policyDocument{}
 	if base != nil && base.Inline != "" {
-		if err := json.Unmarshal([]byte(base.Inline), &doc); err != nil {
-			return "", fmt.Errorf("acl_policy.inline is not valid JSON: %w", err)
+		// Headscale's policy file is HuJSON (JSON with comments + trailing
+		// commas), so accept the same dialect on input. Standardize() rewrites
+		// it to strict JSON before unmarshaling.
+		standardized, err := hujson.Standardize([]byte(base.Inline))
+		if err != nil {
+			return "", fmt.Errorf("acl_policy.inline is not valid HuJSON: %w", err)
+		}
+		if err := json.Unmarshal(standardized, &doc); err != nil {
+			return "", fmt.Errorf("acl_policy.inline failed to unmarshal: %w", err)
 		}
 	}
 

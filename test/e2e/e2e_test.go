@@ -1190,7 +1190,9 @@ func getActivePolicy(g Gomega, headscaleName string) map[string]any {
 	pod, err := getHeadscalePodName(testNamespace, headscaleName)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	cmd := exec.Command("kubectl", "exec", "-n", testNamespace, pod, "--",
+	// `-c headscale` is required to suppress kubectl's `Defaulted container ...`
+	// warning, which would otherwise be prepended to stdout and fail JSON parse.
+	cmd := exec.Command("kubectl", "exec", "-n", testNamespace, pod, "-c", "headscale", "--",
 		"headscale", "policy", "get")
 	output, err := utils.Run(cmd)
 	g.Expect(err).NotTo(HaveOccurred(), "headscale policy get failed: %s", output)
