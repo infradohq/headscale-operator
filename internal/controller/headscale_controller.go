@@ -107,6 +107,16 @@ func (r *HeadscaleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	// Validate the inline ACL policy up-front so a malformed document surfaces
+	// on the Headscale CRD's status (and operator logs) rather than failing
+	// silently. Reconciliation continues either way: Headscale itself doesn't
+	// load Inline (the AutoApprover controller pushes it via gRPC), so a bad
+	// policy must not block the StatefulSet from coming up.
+	policyCond := validateACLPolicy(headscale)
+	if policyCond.Status == metav1.ConditionFalse {
+		log.Error(fmt.Errorf("%s", policyCond.Message), "Invalid acl_policy.inline")
+	}
+
 	// Reconcile RBAC resources only if APIKey.AutoManage is true or nil (default true)
 	if headscale.Spec.APIKey.AutoManage == nil || *headscale.Spec.APIKey.AutoManage {
 		// Reconcile ServiceAccount
@@ -153,12 +163,33 @@ func (r *HeadscaleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Update status
-	if err := r.updateStatus(ctx, headscale); err != nil {
+	if err := r.updateStatus(ctx, headscale, policyCond); err != nil {
 		log.Error(err, "Failed to update Headscale status")
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// validateACLPolicy parses the inline ACL policy and returns a PolicyValid
+// status condition reflecting the result. An empty inline policy is treated as
+// valid so users always get explicit confirmation that the operator inspected
+// their config.
+func validateACLPolicy(headscale *headscalev1beta1.Headscale) metav1.Condition {
+	cond := metav1.Condition{
+		Type:               "PolicyValid",
+		ObservedGeneration: headscale.Generation,
+	}
+	if _, err := parseInlinePolicy(headscale.Spec.ACLPolicy.Inline); err != nil {
+		cond.Status = metav1.ConditionFalse
+		cond.Reason = "InvalidPolicy"
+		cond.Message = err.Error()
+		return cond
+	}
+	cond.Status = metav1.ConditionTrue
+	cond.Reason = "Valid"
+	cond.Message = "acl_policy.inline parsed successfully"
+	return cond
 }
 
 // handleDeletion handles the deletion of a Headscale instance
@@ -391,11 +422,17 @@ func (r *HeadscaleReconciler) reconcileRoleBinding(ctx context.Context, headscal
 	return nil
 }
 
-// updateStatus updates the status of the Headscale instance
-func (r *HeadscaleReconciler) updateStatus(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
+// updateStatus updates the status of the Headscale instance. The caller passes
+// the already-computed PolicyValid condition so we don't re-parse the inline
+// policy here.
+func (r *HeadscaleReconciler) updateStatus(
+	ctx context.Context,
+	headscale *headscalev1beta1.Headscale,
+	policyCond metav1.Condition,
+) error {
 	patch := client.MergeFrom(headscale.DeepCopy())
 
-	desired := metav1.Condition{
+	ready := metav1.Condition{
 		Type:               "Ready",
 		Status:             metav1.ConditionTrue,
 		Reason:             "Reconciled",
@@ -403,7 +440,9 @@ func (r *HeadscaleReconciler) updateStatus(ctx context.Context, headscale *heads
 		ObservedGeneration: headscale.Generation,
 	}
 
-	if !meta.SetStatusCondition(&headscale.Status.Conditions, desired) {
+	changed := meta.SetStatusCondition(&headscale.Status.Conditions, ready)
+	changed = meta.SetStatusCondition(&headscale.Status.Conditions, policyCond) || changed
+	if !changed {
 		return nil
 	}
 

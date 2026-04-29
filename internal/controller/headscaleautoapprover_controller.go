@@ -390,24 +390,42 @@ const (
 	policyKeyExitNode      = "exitNode"
 )
 
+// parseInlinePolicy parses the inline HuJSON policy string into a policyDocument.
+// An empty input yields an empty document. Error wording is shared with the
+// HeadscaleReconciler, which surfaces it on the parent CRD's PolicyValid status
+// condition so users see the same diagnostics regardless of which controller
+// caught the parse failure.
+func parseInlinePolicy(inline string) (policyDocument, error) {
+	doc := policyDocument{}
+	if inline == "" {
+		return doc, nil
+	}
+	// Headscale's policy file is HuJSON (JSON with comments + trailing
+	// commas), so accept the same dialect on input. Standardize() rewrites
+	// it to strict JSON before unmarshaling.
+	standardized, err := hujson.Standardize([]byte(inline))
+	if err != nil {
+		return nil, fmt.Errorf("acl_policy.inline is not valid HuJSON: %w", err)
+	}
+	if err := json.Unmarshal(standardized, &doc); err != nil {
+		return nil, fmt.Errorf("acl_policy.inline failed to unmarshal: %w", err)
+	}
+	return doc, nil
+}
+
 // buildPolicyDocument merges the inline base, tag owners, and auto-approver
 // entries into a single JSON document ready for SetPolicy.
 func buildPolicyDocument(
 	base *headscalev1beta1.ACLPolicyConfig,
 	approvers []headscalev1beta1.HeadscaleAutoApprover,
 ) (string, error) {
-	doc := policyDocument{}
-	if base != nil && base.Inline != "" {
-		// Headscale's policy file is HuJSON (JSON with comments + trailing
-		// commas), so accept the same dialect on input. Standardize() rewrites
-		// it to strict JSON before unmarshaling.
-		standardized, err := hujson.Standardize([]byte(base.Inline))
-		if err != nil {
-			return "", fmt.Errorf("acl_policy.inline is not valid HuJSON: %w", err)
-		}
-		if err := json.Unmarshal(standardized, &doc); err != nil {
-			return "", fmt.Errorf("acl_policy.inline failed to unmarshal: %w", err)
-		}
+	inline := ""
+	if base != nil {
+		inline = base.Inline
+	}
+	doc, err := parseInlinePolicy(inline)
+	if err != nil {
+		return "", err
 	}
 
 	if base != nil && len(base.TagOwners) > 0 {

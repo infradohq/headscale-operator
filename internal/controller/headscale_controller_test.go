@@ -54,7 +54,7 @@ var _ = Describe("Headscale Controller", func() {
 
 		AfterEach(func() {
 			By("Cleaning up all test resources with various suffixes")
-			suffixes := []string{"", "-automanage", "-no-automanage", "-update", "-deletion", "-replicas", "-pvc", "-security", "-extras"}
+			suffixes := []string{"", "-automanage", "-no-automanage", "-update", "-deletion", "-replicas", "-pvc", "-security", "-extras", "-bad-policy"}
 
 			for _, suffix := range suffixes {
 				crName := "test-headscale" + suffix
@@ -891,5 +891,99 @@ var _ = Describe("Headscale Controller", func() {
 			Expect(labels["app.kubernetes.io/instance"]).To(Equal("test-instance"))
 			Expect(labels["app.kubernetes.io/managed-by"]).To(Equal("headscale-operator"))
 		})
+
+		It("should surface a PolicyValid=False status condition when inline ACL policy is malformed", func() {
+			ctx := context.Background()
+			badPolicyName := types.NamespacedName{
+				Name:      "test-headscale-bad-policy",
+				Namespace: "default",
+			}
+
+			By("Creating the Headscale resource with an invalid inline policy")
+			headscale := &headscalev1beta1.Headscale{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      badPolicyName.Name,
+					Namespace: badPolicyName.Namespace,
+				},
+				Spec: headscalev1beta1.HeadscaleSpec{
+					Version:  "v0.28.0",
+					Replicas: 1,
+					Config: headscalev1beta1.HeadscaleConfig{
+						ServerURL:  "https://headscale.example.com",
+						ListenAddr: "0.0.0.0:8080",
+					},
+					ACLPolicy: headscalev1beta1.ACLPolicyConfig{
+						// Missing quotes around object keys — the exact failure mode from issue #75.
+						Inline: `{ acls: [ { action: "accept", src: ["*"], dst: ["*:*"] } ] }`,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, headscale)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, headscale)
+			})
+
+			By("Reconciling the resource")
+			controllerReconciler := &HeadscaleReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: badPolicyName})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying PolicyValid condition is False with InvalidPolicy reason")
+			updated := &headscalev1beta1.Headscale{}
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx, badPolicyName, updated); err != nil {
+					return false
+				}
+				for _, c := range updated.Status.Conditions {
+					if c.Type == "PolicyValid" &&
+						c.Status == metav1.ConditionFalse &&
+						c.Reason == "InvalidPolicy" {
+						return true
+					}
+				}
+				return false
+			}, time.Second*10, time.Millisecond*250).Should(BeTrue())
+		})
+	})
+})
+
+var _ = Describe("validateACLPolicy", func() {
+	It("returns PolicyValid=True when inline is empty", func() {
+		h := &headscalev1beta1.Headscale{}
+		cond := validateACLPolicy(h)
+		Expect(cond.Type).To(Equal("PolicyValid"))
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		Expect(cond.Reason).To(Equal("Valid"))
+	})
+
+	It("returns PolicyValid=True for valid HuJSON", func() {
+		h := &headscalev1beta1.Headscale{
+			Spec: headscalev1beta1.HeadscaleSpec{
+				ACLPolicy: headscalev1beta1.ACLPolicyConfig{
+					Inline: `{
+						// trailing-comma-friendly HuJSON is acceptable
+						"acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]},],
+					}`,
+				},
+			},
+		}
+		Expect(validateACLPolicy(h).Status).To(Equal(metav1.ConditionTrue))
+	})
+
+	It("returns PolicyValid=False with InvalidPolicy reason for malformed inline", func() {
+		h := &headscalev1beta1.Headscale{
+			Spec: headscalev1beta1.HeadscaleSpec{
+				ACLPolicy: headscalev1beta1.ACLPolicyConfig{
+					Inline: `{ acls: not-a-policy }`,
+				},
+			},
+		}
+		cond := validateACLPolicy(h)
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(Equal("InvalidPolicy"))
+		Expect(cond.Message).NotTo(BeEmpty())
 	})
 })
