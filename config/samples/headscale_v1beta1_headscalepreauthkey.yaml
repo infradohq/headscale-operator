@@ -9,9 +9,11 @@ spec:
   # Reference to the Headscale instance
   headscaleRef: headscale-sample
   
-  # Reference to the HeadscaleUser (use either headscaleUserRef or userId)
+  # Reference to the HeadscaleUser (use either headscaleUserRef or userId).
+  # Both fields are optional and mutually exclusive: omit both to create a
+  # tags-only key (in which case `tags` below must be non-empty).
   headscaleUserRef: headscaleuser-sample
-  
+
   # Alternatively, you can specify the user ID directly:
   # userId: 1
   

@@ -571,8 +571,8 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 			Expect(k8sClient.Delete(ctx, userLtt)).To(Succeed())
 		})
 
-		It("should reject spec with neither HeadscaleUserRef nor UserID", func() {
-			By("Attempting to create a HeadscalePreAuthKey without HeadscaleUserRef or UserID")
+		It("should reject spec with neither user reference nor tags", func() {
+			By("Attempting to create a HeadscalePreAuthKey without HeadscaleUserRef, UserID, or Tags")
 			preAuthKey := &headscalev1beta1.HeadscalePreAuthKey{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      resourceName + "-no-user",
@@ -587,7 +587,7 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 			By("Verifying that creation fails due to validation")
 			err := k8sClient.Create(ctx, preAuthKey)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("exactly one of spec.headscaleUserRef or spec.userId must be specified"))
+			Expect(err.Error()).To(ContainSubstring("spec.tags must be non-empty when neither spec.headscaleUserRef nor spec.userId is set"))
 		})
 
 		It("should reject spec with both HeadscaleUserRef and UserID", func() {
@@ -608,7 +608,57 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 			By("Verifying that creation fails due to validation")
 			err := k8sClient.Create(ctx, preAuthKey)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("exactly one of spec.headscaleUserRef or spec.userId must be specified"))
+			Expect(err.Error()).To(ContainSubstring("spec.headscaleUserRef and spec.userId are mutually exclusive"))
+		})
+
+		It("should accept and reconcile a tags-only HeadscalePreAuthKey (no user)", func() {
+			By("Creating a HeadscalePreAuthKey with tags but no user reference")
+			preAuthKey := &headscalev1beta1.HeadscalePreAuthKey{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName + "-tags-only",
+					Namespace: namespace,
+				},
+				Spec: headscalev1beta1.HeadscalePreAuthKeySpec{
+					HeadscaleRef: headscaleName,
+					Expiration:   "1h",
+					Tags:         []string{"tag:ci"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, preAuthKey)).To(Succeed())
+
+			tagsOnlyNamespacedName := types.NamespacedName{
+				Name:      resourceName + "-tags-only",
+				Namespace: namespace,
+			}
+
+			By("Reconciling the created resource")
+			controllerReconciler := &HeadscalePreAuthKeyReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: tagsOnlyNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking that the finalizer was added")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, tagsOnlyNamespacedName, preAuthKey)
+				if err != nil {
+					return false
+				}
+				return slices.Contains(preAuthKey.Finalizers, headscalePreAuthKeyFinalizer)
+			}, timeout, interval).Should(BeTrue())
+
+			By("Verifying no HeadscaleUser owner reference was set")
+			Expect(k8sClient.Get(ctx, tagsOnlyNamespacedName, preAuthKey)).To(Succeed())
+			for _, ref := range preAuthKey.GetOwnerReferences() {
+				Expect(ref.Kind).NotTo(Equal("HeadscaleUser"))
+			}
+
+			By("Cleaning up the test resource")
+			Expect(k8sClient.Delete(ctx, preAuthKey)).To(Succeed())
 		})
 
 		It("should handle deletion with finalizer", func() {

@@ -28,13 +28,15 @@ type HeadscalePreAuthKeySpec struct {
 	HeadscaleRef string `json:"headscaleRef"`
 
 	// HeadscaleUserRef is the name of the HeadscaleUser resource to create the preauth key for
-	// Either HeadscaleUserRef or UserID must be specified, but not both
+	// HeadscaleUserRef and UserID are mutually exclusive. If neither is set, the key is
+	// created without a user (a "tags-only" key) and Tags must be non-empty.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +optional
 	HeadscaleUserRef string `json:"headscaleUserRef,omitempty"`
 
 	// UserID is the ID of the user in Headscale to create the preauth key for
-	// Either HeadscaleUserRef or UserID must be specified, but not both
+	// HeadscaleUserRef and UserID are mutually exclusive. If neither is set, the key is
+	// created without a user (a "tags-only" key) and Tags must be non-empty.
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	UserID uint64 `json:"userId,omitempty"`
@@ -86,10 +88,12 @@ type HeadscalePreAuthKeyStatus struct {
 // +kubebuilder:resource:shortName=hspak;hspre
 // +kubebuilder:printcolumn:name="HeadscaleUser",type=string,JSONPath=`.spec.headscaleUserRef`
 // +kubebuilder:printcolumn:name="UserID",type=integer,JSONPath=`.spec.userId`
+// +kubebuilder:printcolumn:name="Tags",type=string,JSONPath=`.spec.tags`
 // +kubebuilder:printcolumn:name="Reusable",type=boolean,JSONPath=`.spec.reusable`
 // +kubebuilder:printcolumn:name="Ephemeral",type=boolean,JSONPath=`.spec.ephemeral`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
-// +kubebuilder:validation:XValidation:rule="(has(self.spec.headscaleUserRef) && self.spec.headscaleUserRef != \"\") != (has(self.spec.userId) && self.spec.userId != 0)",message="exactly one of spec.headscaleUserRef or spec.userId must be specified"
+// +kubebuilder:validation:XValidation:rule="!((has(self.spec.headscaleUserRef) && self.spec.headscaleUserRef != \"\") && (has(self.spec.userId) && self.spec.userId != 0))",message="spec.headscaleUserRef and spec.userId are mutually exclusive"
+// +kubebuilder:validation:XValidation:rule="(has(self.spec.headscaleUserRef) && self.spec.headscaleUserRef != \"\") || (has(self.spec.userId) && self.spec.userId != 0) || (has(self.spec.tags) && size(self.spec.tags) > 0)",message="spec.tags must be non-empty when neither spec.headscaleUserRef nor spec.userId is set"
 
 // HeadscalePreAuthKey is the Schema for the headscalepreauthkeys API
 type HeadscalePreAuthKey struct {

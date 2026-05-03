@@ -24,6 +24,9 @@ spec:
     - jsonPath: .spec.userId
       name: UserID
       type: integer
+    - jsonPath: .spec.tags
+      name: Tags
+      type: string
     - jsonPath: .spec.reusable
       name: Reusable
       type: boolean
@@ -79,7 +82,8 @@ spec:
               headscaleUserRef:
                 description: |-
                   HeadscaleUserRef is the name of the HeadscaleUser resource to create the preauth key for
-                  Either HeadscaleUserRef or UserID must be specified, but not both
+                  HeadscaleUserRef and UserID are mutually exclusive. If neither is set, the key is
+                  created without a user (a "tags-only" key) and Tags must be non-empty.
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
               reusable:
@@ -102,7 +106,8 @@ spec:
               userId:
                 description: |-
                   UserID is the ID of the user in Headscale to create the preauth key for
-                  Either HeadscaleUserRef or UserID must be specified, but not both
+                  HeadscaleUserRef and UserID are mutually exclusive. If neither is set, the key is
+                  created without a user (a "tags-only" key) and Tags must be non-empty.
                 format: int64
                 minimum: 1
                 type: integer
@@ -181,9 +186,14 @@ spec:
         - spec
         type: object
         x-kubernetes-validations:
-        - message: exactly one of spec.headscaleUserRef or spec.userId must be specified
+        - message: spec.headscaleUserRef and spec.userId are mutually exclusive
+          rule: '!((has(self.spec.headscaleUserRef) && self.spec.headscaleUserRef
+            != "") && (has(self.spec.userId) && self.spec.userId != 0))'
+        - message: spec.tags must be non-empty when neither spec.headscaleUserRef
+            nor spec.userId is set
           rule: (has(self.spec.headscaleUserRef) && self.spec.headscaleUserRef !=
-            "") != (has(self.spec.userId) && self.spec.userId != 0)
+            "") || (has(self.spec.userId) && self.spec.userId != 0) || (has(self.spec.tags)
+            && size(self.spec.tags) > 0)
     served: true
     storage: true
     subresources:

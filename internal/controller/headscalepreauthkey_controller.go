@@ -108,99 +108,10 @@ func (r *HeadscalePreAuthKeyReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	// Validate that either HeadscaleUserRef or UserID is provided
-	if preAuthKey.Spec.HeadscaleUserRef == "" && preAuthKey.Spec.UserID == 0 {
-		log.Error(nil, "Either HeadscaleUserRef or UserID must be specified")
-		if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-			Type:    "Ready",
-			Status:  metav1.ConditionFalse,
-			Reason:  "InvalidSpec",
-			Message: "Either HeadscaleUserRef or UserID must be specified",
-		}); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, nil
-	}
-
-	// Validate that both are not provided
-	if preAuthKey.Spec.HeadscaleUserRef != "" && preAuthKey.Spec.UserID != 0 {
-		log.Error(nil, "Only one of HeadscaleUserRef or UserID should be specified")
-		if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-			Type:    "Ready",
-			Status:  metav1.ConditionFalse,
-			Reason:  "InvalidSpec",
-			Message: "Only one of HeadscaleUserRef or UserID should be specified, not both",
-		}); err != nil {
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{}, nil
-	}
-
-	// Determine the user ID to use
-	var userID uint64
-	if preAuthKey.Spec.HeadscaleUserRef != "" {
-		// Get the referenced HeadscaleUser instance
-		headscaleUser := &headscalev1beta1.HeadscaleUser{}
-		err = r.Get(ctx, types.NamespacedName{
-			Name:      preAuthKey.Spec.HeadscaleUserRef,
-			Namespace: preAuthKey.Namespace,
-		}, headscaleUser)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				log.Error(err, "Referenced HeadscaleUser not found", "HeadscaleUserRef", preAuthKey.Spec.HeadscaleUserRef)
-				if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-					Type:    "Ready",
-					Status:  metav1.ConditionFalse,
-					Reason:  "UserNotFound",
-					Message: fmt.Sprintf("Referenced HeadscaleUser %s not found", preAuthKey.Spec.HeadscaleUserRef),
-				}); err != nil {
-					return ctrl.Result{}, err
-				}
-				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
-			}
-			log.Error(err, "Failed to get referenced HeadscaleUser")
-			return ctrl.Result{}, err
-		}
-
-		// Check if user has a UserID (is created in Headscale)
-		if headscaleUser.Status.UserID == "" {
-			log.Info("User not yet created in Headscale, waiting", "HeadscaleUserRef", preAuthKey.Spec.HeadscaleUserRef)
-			if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-				Type:    "Ready",
-				Status:  metav1.ConditionFalse,
-				Reason:  "UserNotReady",
-				Message: fmt.Sprintf("User %s not yet created in Headscale", preAuthKey.Spec.HeadscaleUserRef),
-			}); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-		}
-
-		// Parse the user ID from HeadscaleUser status
-		parsedUserID, err := strconv.ParseUint(headscaleUser.Status.UserID, 10, 64)
-		if err != nil {
-			log.Error(err, "Failed to parse user ID from HeadscaleUser")
-			if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-				Type:    "Ready",
-				Status:  metav1.ConditionFalse,
-				Reason:  "InvalidUserID",
-				Message: fmt.Sprintf("Failed to parse user ID: %v", err),
-			}); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, fmt.Errorf("failed to parse user ID: %w", err)
-		}
-		userID = parsedUserID
-
-		// Set owner reference to HeadscaleUser for automatic cleanup
-		// This ensures when HeadscaleUser is deleted, the PreAuthKey is also deleted
-		if err := r.ensureHeadscaleUserOwnerReference(ctx, preAuthKey, headscaleUser); err != nil {
-			log.Error(err, "Failed to set owner reference to HeadscaleUser")
-			return ctrl.Result{}, err
-		}
-	} else {
-		// Use the directly provided UserID
-		userID = preAuthKey.Spec.UserID
+	// Resolve the userID to pass to Headscale. Zero means "no user" (tags-only key).
+	userID, result, done, err := r.resolveUserID(ctx, preAuthKey)
+	if done || err != nil {
+		return result, err
 	}
 
 	// Check if the preauth key already exists
@@ -241,12 +152,113 @@ func (r *HeadscalePreAuthKeyReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	userRefInfo := fmt.Sprintf("UserID: %d", userID)
-	if preAuthKey.Spec.HeadscaleUserRef != "" {
+	var userRefInfo string
+	switch {
+	case preAuthKey.Spec.HeadscaleUserRef != "":
 		userRefInfo = fmt.Sprintf("HeadscaleUserRef: %s", preAuthKey.Spec.HeadscaleUserRef)
+	case userID != 0:
+		userRefInfo = fmt.Sprintf("UserID: %d", userID)
+	default:
+		userRefInfo = "tags-only"
 	}
 	log.Info("Successfully created preauth key", "UserInfo", userRefInfo)
 	return ctrl.Result{}, nil
+}
+
+// resolveUserID validates the user reference fields on the spec and resolves
+// the Headscale user ID to use when creating the key. A returned userID of 0
+// means the key should be created without a user (tags-only). When done is
+// true, the caller should return immediately with the supplied result.
+func (r *HeadscalePreAuthKeyReconciler) resolveUserID(
+	ctx context.Context,
+	preAuthKey *headscalev1beta1.HeadscalePreAuthKey,
+) (userID uint64, result ctrl.Result, done bool, err error) {
+	log := logf.FromContext(ctx)
+
+	if preAuthKey.Spec.HeadscaleUserRef != "" && preAuthKey.Spec.UserID != 0 {
+		log.Error(nil, "Only one of HeadscaleUserRef or UserID should be specified")
+		if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
+			Type:    "Ready",
+			Status:  metav1.ConditionFalse,
+			Reason:  "InvalidSpec",
+			Message: "Only one of HeadscaleUserRef or UserID should be specified, not both",
+		}); err != nil {
+			return 0, ctrl.Result{}, true, err
+		}
+		return 0, ctrl.Result{}, true, nil
+	}
+
+	if preAuthKey.Spec.HeadscaleUserRef == "" && preAuthKey.Spec.UserID == 0 && len(preAuthKey.Spec.Tags) == 0 {
+		log.Error(nil, "Tags must be set when neither HeadscaleUserRef nor UserID is specified")
+		if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
+			Type:    "Ready",
+			Status:  metav1.ConditionFalse,
+			Reason:  "InvalidSpec",
+			Message: "Tags must be non-empty when neither HeadscaleUserRef nor UserID is specified",
+		}); err != nil {
+			return 0, ctrl.Result{}, true, err
+		}
+		return 0, ctrl.Result{}, true, nil
+	}
+
+	if preAuthKey.Spec.HeadscaleUserRef == "" {
+		return preAuthKey.Spec.UserID, ctrl.Result{}, false, nil
+	}
+
+	headscaleUser := &headscalev1beta1.HeadscaleUser{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      preAuthKey.Spec.HeadscaleUserRef,
+		Namespace: preAuthKey.Namespace,
+	}, headscaleUser); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Error(err, "Referenced HeadscaleUser not found", "HeadscaleUserRef", preAuthKey.Spec.HeadscaleUserRef)
+			if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
+				Type:    "Ready",
+				Status:  metav1.ConditionFalse,
+				Reason:  "UserNotFound",
+				Message: fmt.Sprintf("Referenced HeadscaleUser %s not found", preAuthKey.Spec.HeadscaleUserRef),
+			}); err != nil {
+				return 0, ctrl.Result{}, true, err
+			}
+			return 0, ctrl.Result{RequeueAfter: 30 * time.Second}, true, nil
+		}
+		log.Error(err, "Failed to get referenced HeadscaleUser")
+		return 0, ctrl.Result{}, true, err
+	}
+
+	if headscaleUser.Status.UserID == "" {
+		log.Info("User not yet created in Headscale, waiting", "HeadscaleUserRef", preAuthKey.Spec.HeadscaleUserRef)
+		if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
+			Type:    "Ready",
+			Status:  metav1.ConditionFalse,
+			Reason:  "UserNotReady",
+			Message: fmt.Sprintf("User %s not yet created in Headscale", preAuthKey.Spec.HeadscaleUserRef),
+		}); err != nil {
+			return 0, ctrl.Result{}, true, err
+		}
+		return 0, ctrl.Result{RequeueAfter: 10 * time.Second}, true, nil
+	}
+
+	parsedUserID, err := strconv.ParseUint(headscaleUser.Status.UserID, 10, 64)
+	if err != nil {
+		log.Error(err, "Failed to parse user ID from HeadscaleUser")
+		if updateErr := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
+			Type:    "Ready",
+			Status:  metav1.ConditionFalse,
+			Reason:  "InvalidUserID",
+			Message: fmt.Sprintf("Failed to parse user ID: %v", err),
+		}); updateErr != nil {
+			return 0, ctrl.Result{}, true, updateErr
+		}
+		return 0, ctrl.Result{}, true, fmt.Errorf("failed to parse user ID: %w", err)
+	}
+
+	if err := r.ensureHeadscaleUserOwnerReference(ctx, preAuthKey, headscaleUser); err != nil {
+		log.Error(err, "Failed to set owner reference to HeadscaleUser")
+		return 0, ctrl.Result{}, true, err
+	}
+
+	return parsedUserID, ctrl.Result{}, false, nil
 }
 
 // handleDeletion handles the deletion of a HeadscalePreAuthKey instance
