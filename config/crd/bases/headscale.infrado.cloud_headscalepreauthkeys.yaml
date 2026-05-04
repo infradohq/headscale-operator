@@ -68,12 +68,12 @@ spec:
                   be ephemeral
                 type: boolean
               expiration:
-                default: 1h
                 description: |-
-                  Expiration is the duration after which the preauth key expires
-                  Examples: 30m, 24h, 1h30m, 300ms, 1.5h (must be a valid Go duration string)
-                  Valid time units are "s", "m", "h"
-                pattern: ^([0-9]+(\.[0-9]+)?(s|m|h))+$
+                  Expiration is the duration after which the preauth key expires.
+                  Examples: 30m, 24h, 1h30m, 1.5h (must be a valid Go duration string).
+                  Valid time units are "s", "m", "h". Leave empty to create a key that
+                  never expires.
+                pattern: ^$|^([0-9]+(\.[0-9]+)?(s|m|h))+$
                 type: string
               headscaleRef:
                 description: HeadscaleRef is the name of the Headscale instance to

@@ -384,10 +384,14 @@ func (r *HeadscalePreAuthKeyReconciler) createPreAuthKey(
 ) error {
 	log := logf.FromContext(ctx)
 
-	// Parse expiration duration
-	expiration, err := time.ParseDuration(preAuthKey.Spec.Expiration)
-	if err != nil {
-		return fmt.Errorf("failed to parse expiration: %w", err)
+	// Parse expiration duration. An empty value means the key never expires.
+	var expiration time.Duration
+	if preAuthKey.Spec.Expiration != "" {
+		parsed, err := time.ParseDuration(preAuthKey.Spec.Expiration)
+		if err != nil {
+			return fmt.Errorf("failed to parse expiration: %w", err)
+		}
+		expiration = parsed
 	}
 
 	// Get the API key from the secret
