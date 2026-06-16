@@ -194,5 +194,8 @@ type HeadscaleList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&Headscale{}, &HeadscaleList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(SchemeGroupVersion, &Headscale{}, &HeadscaleList{})
+		return nil
+	})
 }
