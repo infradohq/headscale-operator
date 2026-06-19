@@ -8,13 +8,12 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -34,6 +33,14 @@ type HeadscaleReconciler struct {
 
 const (
 	headscaleFinalizer = "headscale.infrado.cloud/finalizer"
+
+	// fieldOwner identifies this operator as the Server-Side Apply field
+	// manager. Child resources are reconciled via SSA so the operator owns only
+	// the fields it actually sets; API-server defaulting and external mutations
+	// (e.g. GKE Autopilot injecting resource requests) are owned by other
+	// managers and therefore never register as a diff or cause update
+	// conflicts.
+	fieldOwner client.FieldOwner = "headscale-operator"
 )
 
 // Child resource names are derived from the Headscale CR's metadata.name so
@@ -176,6 +183,36 @@ func validateACLPolicy(headscale *headscalev1beta1.Headscale) metav1.Condition {
 	return cond
 }
 
+// applyResource reconciles a desired child object onto the cluster using
+// Server-Side Apply. Compared to a get/diff/update cycle, SSA lets the operator
+// declare ownership of only the fields it sets: API-server defaulting and
+// external mutations (for example GKE Autopilot injecting resource requests)
+// are tracked under other field managers, so they no longer show up as a
+// perpetual diff or trigger optimistic-lock ("the object has been modified")
+// conflicts on every reconcile.
+func (r *HeadscaleReconciler) applyResource(ctx context.Context, owner *headscalev1beta1.Headscale, obj client.Object) error {
+	if err := controllerutil.SetControllerReference(owner, obj, r.Scheme); err != nil {
+		return err
+	}
+
+	gvk, err := r.GroupVersionKindFor(obj)
+	if err != nil {
+		return err
+	}
+
+	// Apply works on an apply configuration. Convert the typed object to
+	// unstructured (json semantics, so unset omitempty fields stay absent) and
+	// carry the GVK so the payload includes apiVersion/kind.
+	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		return err
+	}
+	u := &unstructured.Unstructured{Object: raw}
+	u.SetGroupVersionKind(gvk)
+
+	return r.Apply(ctx, client.ApplyConfigurationFromUnstructured(u), fieldOwner, client.ForceOwnership)
+}
+
 // handleDeletion handles the deletion of a Headscale instance
 func (r *HeadscaleReconciler) handleDeletion(ctx context.Context, headscale *headscalev1beta1.Headscale) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -222,188 +259,50 @@ func (r *HeadscaleReconciler) ensureFinalizer(ctx context.Context, headscale *he
 
 // reconcileConfigMap reconciles the ConfigMap for Headscale
 func (r *HeadscaleReconciler) reconcileConfigMap(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	log := logf.FromContext(ctx)
-
 	configMap, err := r.configMapForHeadscale(headscale)
 	if err != nil {
 		return fmt.Errorf("failed to generate ConfigMap: %w", err)
 	}
-	if err := controllerutil.SetControllerReference(headscale, configMap, r.Scheme); err != nil {
-		return err
-	}
-
-	foundConfigMap := &corev1.ConfigMap{}
-	err = r.Get(ctx, types.NamespacedName{Name: configMap.Name, Namespace: configMap.Namespace}, foundConfigMap)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating ConfigMap", "Namespace", configMap.Namespace, "Name", configMap.Name)
-		return r.Create(ctx, configMap)
-	} else if err != nil {
-		return fmt.Errorf("failed to get ConfigMap: %w", err)
-	}
-
-	// Update the ConfigMap only if data changed
-	if !equality.Semantic.DeepEqual(foundConfigMap.Data, configMap.Data) {
-		foundConfigMap.Data = configMap.Data
-		log.Info("Updating ConfigMap", "Namespace", configMap.Namespace, "Name", configMap.Name)
-		return r.Update(ctx, foundConfigMap)
-	}
-	return nil
+	return r.applyResource(ctx, headscale, configMap)
 }
 
 // reconcileStatefulSet reconciles the StatefulSet for Headscale
 func (r *HeadscaleReconciler) reconcileStatefulSet(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	log := logf.FromContext(ctx)
-
 	// Compute hash of the config spec directly from the Headscale CR
 	configHash := computeConfigHashFromSpec(&headscale.Spec.Config)
 
 	statefulSet := r.statefulSetForHeadscale(headscale, configHash)
-	if err := controllerutil.SetControllerReference(headscale, statefulSet, r.Scheme); err != nil {
-		return err
-	}
-
-	foundStatefulSet := &appsv1.StatefulSet{}
-	err := r.Get(ctx, types.NamespacedName{Name: statefulSet.Name, Namespace: statefulSet.Namespace}, foundStatefulSet)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating StatefulSet", "Namespace", statefulSet.Namespace, "Name", statefulSet.Name)
-		return r.Create(ctx, statefulSet)
-	} else if err != nil {
-		return fmt.Errorf("failed to get StatefulSet: %w", err)
-	}
-
-	// NOTE: for now we check the whole spec, including the immutable fields
-	// if we decided to change those fields later, we would need to change
-	// the logic here to avoid trying doing that.
-	if equality.Semantic.DeepEqual(foundStatefulSet.Spec, statefulSet.Spec) {
-		return nil
-	}
-
-	foundStatefulSet.Spec = statefulSet.Spec
-
-	log.Info("Updating StatefulSet", "Namespace", statefulSet.Namespace, "Name", statefulSet.Name)
-	return r.Update(ctx, foundStatefulSet)
+	return r.applyResource(ctx, headscale, statefulSet)
 }
 
 // reconcileService reconciles the Service for Headscale
 func (r *HeadscaleReconciler) reconcileService(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	log := logf.FromContext(ctx)
-
 	service := r.serviceForHeadscale(headscale)
-	if err := controllerutil.SetControllerReference(headscale, service, r.Scheme); err != nil {
-		return err
-	}
-
-	foundService := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, foundService)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating Service", "Namespace", service.Namespace, "Name", service.Name)
-		return r.Create(ctx, service)
-	} else if err != nil {
-		return fmt.Errorf("failed to get Service: %w", err)
-	}
-	return nil
+	return r.applyResource(ctx, headscale, service)
 }
 
 // reconcileMetricsService reconciles the Metrics Service for Headscale
 func (r *HeadscaleReconciler) reconcileMetricsService(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	log := logf.FromContext(ctx)
-
 	metricsService := r.metricsServiceForHeadscale(headscale)
-	if err := controllerutil.SetControllerReference(headscale, metricsService, r.Scheme); err != nil {
-		return err
-	}
-
-	foundMetricsService := &corev1.Service{}
-	err := r.Get(ctx, types.NamespacedName{Name: metricsService.Name, Namespace: metricsService.Namespace}, foundMetricsService)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating Metrics Service", "Namespace", metricsService.Namespace, "Name", metricsService.Name)
-		return r.Create(ctx, metricsService)
-	} else if err != nil {
-		return fmt.Errorf("failed to get Metrics Service: %w", err)
-	}
-	return nil
+	return r.applyResource(ctx, headscale, metricsService)
 }
 
 // reconcileServiceAccount reconciles the ServiceAccount for Headscale pods
 func (r *HeadscaleReconciler) reconcileServiceAccount(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	log := logf.FromContext(ctx)
-
 	sa := r.serviceAccountForHeadscale(headscale)
-	if err := controllerutil.SetControllerReference(headscale, sa, r.Scheme); err != nil {
-		return err
-	}
-
-	foundSA := &corev1.ServiceAccount{}
-	err := r.Get(ctx, types.NamespacedName{Name: sa.Name, Namespace: sa.Namespace}, foundSA)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating ServiceAccount", "Namespace", sa.Namespace, "Name", sa.Name)
-		return r.Create(ctx, sa)
-	} else if err != nil {
-		return fmt.Errorf("failed to get ServiceAccount: %w", err)
-	}
-
-	// Update the ServiceAccount only if labels changed
-	if !equality.Semantic.DeepEqual(foundSA.Labels, sa.Labels) {
-		foundSA.Labels = sa.Labels
-		log.Info("Updating ServiceAccount", "Namespace", sa.Namespace, "Name", sa.Name)
-		return r.Update(ctx, foundSA)
-	}
-	return nil
+	return r.applyResource(ctx, headscale, sa)
 }
 
 // reconcileRole reconciles the Role for Headscale pods
 func (r *HeadscaleReconciler) reconcileRole(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	log := logf.FromContext(ctx)
-
 	role := r.roleForHeadscale(headscale)
-	if err := controllerutil.SetControllerReference(headscale, role, r.Scheme); err != nil {
-		return err
-	}
-
-	foundRole := &rbacv1.Role{}
-	err := r.Get(ctx, types.NamespacedName{Name: role.Name, Namespace: role.Namespace}, foundRole)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating Role", "Namespace", role.Namespace, "Name", role.Name)
-		return r.Create(ctx, role)
-	} else if err != nil {
-		return fmt.Errorf("failed to get Role: %w", err)
-	}
-
-	// Update the Role only if rules changed
-	if !equality.Semantic.DeepEqual(foundRole.Rules, role.Rules) {
-		foundRole.Rules = role.Rules
-		log.Info("Updating Role", "Namespace", role.Namespace, "Name", role.Name)
-		return r.Update(ctx, foundRole)
-	}
-	return nil
+	return r.applyResource(ctx, headscale, role)
 }
 
 // reconcileRoleBinding reconciles the RoleBinding for Headscale pods
 func (r *HeadscaleReconciler) reconcileRoleBinding(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	log := logf.FromContext(ctx)
-
 	rb := r.roleBindingForHeadscale(headscale)
-	if err := controllerutil.SetControllerReference(headscale, rb, r.Scheme); err != nil {
-		return err
-	}
-
-	foundRB := &rbacv1.RoleBinding{}
-	err := r.Get(ctx, types.NamespacedName{Name: rb.Name, Namespace: rb.Namespace}, foundRB)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating RoleBinding", "Namespace", rb.Namespace, "Name", rb.Name)
-		return r.Create(ctx, rb)
-	} else if err != nil {
-		return fmt.Errorf("failed to get RoleBinding: %w", err)
-	}
-
-	// Update the RoleBinding only if subjects or roleRef changed
-	if !equality.Semantic.DeepEqual(foundRB.Subjects, rb.Subjects) || !equality.Semantic.DeepEqual(foundRB.RoleRef, rb.RoleRef) {
-		foundRB.Subjects = rb.Subjects
-		foundRB.RoleRef = rb.RoleRef
-		log.Info("Updating RoleBinding", "Namespace", rb.Namespace, "Name", rb.Name)
-		return r.Update(ctx, foundRB)
-	}
-	return nil
+	return r.applyResource(ctx, headscale, rb)
 }
 
 // updateStatus updates the status of the Headscale instance. The caller passes
