@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -15,12 +16,12 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/yaml"
 
 	headscalev1beta1 "github.com/infradohq/headscale-operator/api/v1beta1"
 )
@@ -28,8 +29,15 @@ import (
 // HeadscaleReconciler reconciles a Headscale object
 type HeadscaleReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
+
+// notReadyRequeue is how long to wait before re-checking workload readiness when
+// the Headscale StatefulSet has not yet reported its desired ready replicas.
+// Pods are not directly owned by the CR, so this requeue is what lets the Ready
+// condition self-heal once the workload settles (or surfaces a crash reason).
+const notReadyRequeue = 30 * time.Second
 
 const (
 	headscaleFinalizer = "headscale.infrado.cloud/finalizer"
@@ -66,6 +74,8 @@ func apiKeySecretNameFor(h *headscalev1beta1.Headscale) string {
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
@@ -98,6 +108,14 @@ func (r *HeadscaleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	// spec.config is an opaque passthrough: the operator renders it to
+	// config.yaml verbatim (injecting only the wiring keys it must keep
+	// consistent) and lets headscale validate the rest at startup. parseConfigView
+	// extracts the few keys the operator itself reads.
+	view := parseConfigView(headscale.Spec.Config)
+	rendered, renderErr := renderConfigYAML(headscale.Spec.Config, view)
+	configCond := configValidCondition(headscale, view, renderErr)
+
 	// Validate the inline ACL policy up-front so a malformed document surfaces
 	// on the Headscale CRD's status (and operator logs) rather than failing
 	// silently. Reconciliation continues either way: Headscale itself doesn't
@@ -106,6 +124,18 @@ func (r *HeadscaleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	policyCond := validateACLPolicy(headscale)
 	if policyCond.Status == metav1.ConditionFalse {
 		log.Error(fmt.Errorf("%s", policyCond.Message), "Invalid acl_policy.inline")
+	}
+
+	// If spec.config can't be rendered at all (malformed beyond what the API
+	// server caught) there's no usable ConfigMap to build. Report it and stop;
+	// the next spec change requeues us.
+	if renderErr != nil {
+		log.Error(renderErr, "Failed to render headscale config")
+		readyCond := newCondition(headscale, "Ready", metav1.ConditionFalse, "ConfigInvalid", renderErr.Error())
+		if err := r.updateStatus(ctx, headscale, configCond, policyCond, readyCond); err != nil {
+			log.Error(err, "Failed to update Headscale status")
+		}
+		return ctrl.Result{}, nil
 	}
 
 	// Reconcile RBAC resources only if APIKey.AutoManage is true or nil (default true)
@@ -130,35 +160,44 @@ func (r *HeadscaleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Reconcile ConfigMap
-	if err := r.reconcileConfigMap(ctx, headscale); err != nil {
+	if err := r.reconcileConfigMap(ctx, headscale, rendered); err != nil {
 		log.Error(err, "Failed to reconcile ConfigMap")
 		return ctrl.Result{}, err
 	}
 
 	// Reconcile StatefulSet
-	if err := r.reconcileStatefulSet(ctx, headscale); err != nil {
+	configHash := computeConfigHash(rendered)
+	if err := r.reconcileStatefulSet(ctx, headscale, view, configHash); err != nil {
 		log.Error(err, "Failed to reconcile StatefulSet")
 		return ctrl.Result{}, err
 	}
 
 	// Reconcile Service
-	if err := r.reconcileService(ctx, headscale); err != nil {
+	if err := r.reconcileService(ctx, headscale, view); err != nil {
 		log.Error(err, "Failed to reconcile Service")
 		return ctrl.Result{}, err
 	}
 
 	// Reconcile Metrics Service
-	if err := r.reconcileMetricsService(ctx, headscale); err != nil {
+	if err := r.reconcileMetricsService(ctx, headscale, view); err != nil {
 		log.Error(err, "Failed to reconcile Metrics Service")
 		return ctrl.Result{}, err
 	}
 
+	// Derive the Ready condition from the actual workload state so that a config
+	// headscale rejects at startup surfaces here instead of silently looking
+	// healthy.
+	readyCond, requeue := r.computeReadyCondition(ctx, headscale)
+
 	// Update status
-	if err := r.updateStatus(ctx, headscale, policyCond); err != nil {
+	if err := r.updateStatus(ctx, headscale, configCond, policyCond, readyCond); err != nil {
 		log.Error(err, "Failed to update Headscale status")
 		return ctrl.Result{}, err
 	}
 
+	if requeue {
+		return ctrl.Result{RequeueAfter: notReadyRequeue}, nil
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -258,32 +297,26 @@ func (r *HeadscaleReconciler) ensureFinalizer(ctx context.Context, headscale *he
 }
 
 // reconcileConfigMap reconciles the ConfigMap for Headscale
-func (r *HeadscaleReconciler) reconcileConfigMap(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	configMap, err := r.configMapForHeadscale(headscale)
-	if err != nil {
-		return fmt.Errorf("failed to generate ConfigMap: %w", err)
-	}
+func (r *HeadscaleReconciler) reconcileConfigMap(ctx context.Context, headscale *headscalev1beta1.Headscale, rendered []byte) error {
+	configMap := r.configMapForHeadscale(headscale, rendered)
 	return r.applyResource(ctx, headscale, configMap)
 }
 
 // reconcileStatefulSet reconciles the StatefulSet for Headscale
-func (r *HeadscaleReconciler) reconcileStatefulSet(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	// Compute hash of the config spec directly from the Headscale CR
-	configHash := computeConfigHashFromSpec(&headscale.Spec.Config)
-
-	statefulSet := r.statefulSetForHeadscale(headscale, configHash)
+func (r *HeadscaleReconciler) reconcileStatefulSet(ctx context.Context, headscale *headscalev1beta1.Headscale, view headscaleConfigView, configHash string) error {
+	statefulSet := r.statefulSetForHeadscale(headscale, view, configHash)
 	return r.applyResource(ctx, headscale, statefulSet)
 }
 
 // reconcileService reconciles the Service for Headscale
-func (r *HeadscaleReconciler) reconcileService(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	service := r.serviceForHeadscale(headscale)
+func (r *HeadscaleReconciler) reconcileService(ctx context.Context, headscale *headscalev1beta1.Headscale, view headscaleConfigView) error {
+	service := r.serviceForHeadscale(headscale, view)
 	return r.applyResource(ctx, headscale, service)
 }
 
 // reconcileMetricsService reconciles the Metrics Service for Headscale
-func (r *HeadscaleReconciler) reconcileMetricsService(ctx context.Context, headscale *headscalev1beta1.Headscale) error {
-	metricsService := r.metricsServiceForHeadscale(headscale)
+func (r *HeadscaleReconciler) reconcileMetricsService(ctx context.Context, headscale *headscalev1beta1.Headscale, view headscaleConfigView) error {
+	metricsService := r.metricsServiceForHeadscale(headscale, view)
 	return r.applyResource(ctx, headscale, metricsService)
 }
 
@@ -305,26 +338,23 @@ func (r *HeadscaleReconciler) reconcileRoleBinding(ctx context.Context, headscal
 	return r.applyResource(ctx, headscale, rb)
 }
 
-// updateStatus updates the status of the Headscale instance. The caller passes
-// the already-computed PolicyValid condition so we don't re-parse the inline
-// policy here.
+// updateStatus sets the supplied conditions on the Headscale instance and
+// patches the status subresource only when something actually changed. Callers
+// pass the already-computed conditions (ConfigValid, PolicyValid, Ready) so this
+// helper does no re-derivation.
 func (r *HeadscaleReconciler) updateStatus(
 	ctx context.Context,
 	headscale *headscalev1beta1.Headscale,
-	policyCond metav1.Condition,
+	conds ...metav1.Condition,
 ) error {
 	patch := client.MergeFrom(headscale.DeepCopy())
 
-	ready := metav1.Condition{
-		Type:               "Ready",
-		Status:             metav1.ConditionTrue,
-		Reason:             "Reconciled",
-		Message:            "Headscale is running",
-		ObservedGeneration: headscale.Generation,
+	changed := false
+	for _, cond := range conds {
+		if meta.SetStatusCondition(&headscale.Status.Conditions, cond) {
+			changed = true
+		}
 	}
-
-	changed := meta.SetStatusCondition(&headscale.Status.Conditions, ready)
-	changed = meta.SetStatusCondition(&headscale.Status.Conditions, policyCond) || changed
 	if !changed {
 		return nil
 	}
@@ -332,13 +362,9 @@ func (r *HeadscaleReconciler) updateStatus(
 	return r.Status().Patch(ctx, headscale, patch)
 }
 
-// configMapForHeadscale returns a ConfigMap object for Headscale configuration
-func (r *HeadscaleReconciler) configMapForHeadscale(h *headscalev1beta1.Headscale) (*corev1.ConfigMap, error) {
-	configData, err := yaml.Marshal(h.Spec.Config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal headscale config: %w", err)
-	}
-
+// configMapForHeadscale returns a ConfigMap holding the rendered headscale
+// config.yaml. Rendering happens in renderConfigYAML; this only wraps the bytes.
+func (r *HeadscaleReconciler) configMapForHeadscale(h *headscalev1beta1.Headscale, rendered []byte) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      configMapNameFor(h),
@@ -346,38 +372,32 @@ func (r *HeadscaleReconciler) configMapForHeadscale(h *headscalev1beta1.Headscal
 			Labels:    labelsForHeadscale(h.Name),
 		},
 		Data: map[string]string{
-			"config.yaml": string(configData),
+			"config.yaml": string(rendered),
 		},
-	}, nil
+	}
 }
 
-// computeConfigHashFromSpec computes a SHA256 hash of the Headscale config spec
-func computeConfigHashFromSpec(config *headscalev1beta1.HeadscaleConfig) string {
-	// Marshal the config to YAML to get a consistent representation
-	configData, err := yaml.Marshal(config)
-	if err != nil {
-		// If marshaling fails, return empty string - the StatefulSet will still work
-		// but won't get automatic restarts on config changes
-		return ""
-	}
-
+// computeConfigHash computes a short SHA256 hash of the rendered config.yaml. It
+// is stamped onto the pod template so any change to the effective config rolls
+// the StatefulSet.
+func computeConfigHash(rendered []byte) string {
 	hash := sha256.New()
-	hash.Write(configData)
+	hash.Write(rendered)
 	return fmt.Sprintf("%x", hash.Sum(nil))[:16]
 }
 
 // statefulSetForHeadscale returns a StatefulSet object for Headscale
-func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headscale, configHash string) *appsv1.StatefulSet {
+func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headscale, view headscaleConfigView, configHash string) *appsv1.StatefulSet {
 	labels := labelsForHeadscale(h.Name)
 	replicas := h.Spec.Replicas
 
 	// Determine the image to use
 	image := fmt.Sprintf("%s:%s", h.Spec.Image, h.Spec.Version)
 
-	// Extract ports from configuration
-	httpPort := extractPort(h.Spec.Config.ListenAddr, 8080)
-	metricsPort := extractPort(h.Spec.Config.MetricsListenAddr, 9090)
-	grpcPort := extractPort(h.Spec.Config.GRPCListenAddr, 50443)
+	// Extract ports from the effective config view (defaults already applied)
+	httpPort := extractPort(view.ListenAddr, 8080)
+	metricsPort := extractPort(view.MetricsListenAddr, 9090)
+	grpcPort := extractPort(view.GRPCListenAddr, 50443)
 
 	// Get PVC configuration with defaults
 	pvcSize := resource.NewQuantity(128*1024*1024, resource.BinarySI) // 128Mi default
@@ -404,6 +424,10 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 			Name:            "headscale",
 			Image:           image,
 			ImagePullPolicy: corev1.PullIfNotPresent,
+			// Fall back to the container logs for the termination message so a
+			// fatal config error (headscale validates its config at startup)
+			// surfaces on the Headscale status instead of being lost.
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			Command: []string{
 				"headscale",
 				"serve",
@@ -516,7 +540,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 			Image:           managerImage,
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Args: []string{
-				"--socket-path=" + h.Spec.Config.UnixSocket,
+				"--socket-path=" + view.UnixSocket,
 				"--secret-name=" + apiKeySecretNameFor(h),
 				"--expiration=" + h.Spec.APIKey.Expiration,
 				"--rotation-buffer=" + h.Spec.APIKey.RotationBuffer,
@@ -605,12 +629,12 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 }
 
 // serviceForHeadscale returns a Service object for Headscale
-func (r *HeadscaleReconciler) serviceForHeadscale(h *headscalev1beta1.Headscale) *corev1.Service {
+func (r *HeadscaleReconciler) serviceForHeadscale(h *headscalev1beta1.Headscale, view headscaleConfigView) *corev1.Service {
 	labels := labelsForHeadscale(h.Name)
 
-	// Extract ports from configuration
-	httpPort := extractPort(h.Spec.Config.ListenAddr, 8080)
-	grpcPort := extractPort(h.Spec.Config.GRPCListenAddr, 50443)
+	// Extract ports from the effective config view
+	httpPort := extractPort(view.ListenAddr, 8080)
+	grpcPort := extractPort(view.GRPCListenAddr, 50443)
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -640,11 +664,11 @@ func (r *HeadscaleReconciler) serviceForHeadscale(h *headscalev1beta1.Headscale)
 }
 
 // metricsServiceForHeadscale returns a Service object for Headscale metrics
-func (r *HeadscaleReconciler) metricsServiceForHeadscale(h *headscalev1beta1.Headscale) *corev1.Service {
+func (r *HeadscaleReconciler) metricsServiceForHeadscale(h *headscalev1beta1.Headscale, view headscaleConfigView) *corev1.Service {
 	labels := labelsForHeadscale(h.Name)
 
-	// Extract metrics port from configuration
-	metricsPort := extractPort(h.Spec.Config.MetricsListenAddr, 9090)
+	// Extract metrics port from the effective config view
+	metricsPort := extractPort(view.MetricsListenAddr, 9090)
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{

@@ -291,14 +291,24 @@ spec:
   config:
     server_url: http://headscale.local
     grpc_allow_insecure: true
+    noise:
+      private_key_path: /var/lib/headscale/noise_private.key
+    prefixes:
+      v4: 100.64.0.0/10
+      v6: fd7a:115c:a1e0::/48
     derp:
       server:
         enabled: false
+      urls:
+        - https://controlplane.tailscale.com/derpmap/default
     disable_check_updates: true
     database:
       type: sqlite
+      sqlite:
+        path: /var/lib/headscale/db.sqlite
     dns:
       magic_dns: false
+      override_local_dns: false
   api_key:
     auto_manage: true
     secret_name: "%s-api-key"
@@ -363,14 +373,24 @@ spec:
   config:
     server_url: http://headscale.local
     grpc_allow_insecure: true
+    noise:
+      private_key_path: /var/lib/headscale/noise_private.key
+    prefixes:
+      v4: 100.64.0.0/10
+      v6: fd7a:115c:a1e0::/48
     derp:
       server:
         enabled: false
+      urls:
+        - https://controlplane.tailscale.com/derpmap/default
     disable_check_updates: true
     database:
       type: sqlite
+      sqlite:
+        path: /var/lib/headscale/db.sqlite
     dns:
       magic_dns: false
+      override_local_dns: false
   api_key:
     auto_manage: true
     expiration: "24h"
@@ -500,14 +520,24 @@ spec:
   config:
     server_url: http://headscale.local
     grpc_allow_insecure: true
+    noise:
+      private_key_path: /var/lib/headscale/noise_private.key
+    prefixes:
+      v4: 100.64.0.0/10
+      v6: fd7a:115c:a1e0::/48
     derp:
       server:
         enabled: false
+      urls:
+        - https://controlplane.tailscale.com/derpmap/default
     disable_check_updates: true
     database:
       type: sqlite
+      sqlite:
+        path: /var/lib/headscale/db.sqlite
     dns:
       magic_dns: false
+      override_local_dns: false
   api_key:
     auto_manage: true
     expiration: "24h"
@@ -777,14 +807,24 @@ spec:
   config:
     server_url: http://headscale.local
     grpc_allow_insecure: true
+    noise:
+      private_key_path: /var/lib/headscale/noise_private.key
+    prefixes:
+      v4: 100.64.0.0/10
+      v6: fd7a:115c:a1e0::/48
     derp:
       server:
         enabled: false
+      urls:
+        - https://controlplane.tailscale.com/derpmap/default
     disable_check_updates: true
     database:
       type: sqlite
+      sqlite:
+        path: /var/lib/headscale/db.sqlite
     dns:
       magic_dns: false
+      override_local_dns: false
   api_key:
     auto_manage: true
     expiration: "24h"
@@ -934,14 +974,24 @@ spec:
   config:
     server_url: http://headscale.local
     grpc_allow_insecure: true
+    noise:
+      private_key_path: /var/lib/headscale/noise_private.key
+    prefixes:
+      v4: 100.64.0.0/10
+      v6: fd7a:115c:a1e0::/48
     derp:
       server:
         enabled: false
+      urls:
+        - https://controlplane.tailscale.com/derpmap/default
     disable_check_updates: true
     database:
       type: sqlite
+      sqlite:
+        path: /var/lib/headscale/db.sqlite
     dns:
       magic_dns: false
+      override_local_dns: false
     policy:
       mode: database
   api_key:
@@ -1069,14 +1119,24 @@ spec:
   config:
     server_url: http://headscale.local
     grpc_allow_insecure: true
+    noise:
+      private_key_path: /var/lib/headscale/noise_private.key
+    prefixes:
+      v4: 100.64.0.0/10
+      v6: fd7a:115c:a1e0::/48
     derp:
       server:
         enabled: false
+      urls:
+        - https://controlplane.tailscale.com/derpmap/default
     disable_check_updates: true
     database:
       type: sqlite
+      sqlite:
+        path: /var/lib/headscale/db.sqlite
     dns:
       magic_dns: false
+      override_local_dns: false
   api_key:
     auto_manage: true
     expiration: "24h"

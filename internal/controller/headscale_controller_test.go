@@ -12,7 +12,12 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
@@ -80,12 +85,7 @@ var _ = Describe("Headscale Controller", func() {
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  "v0.28.0",
 					Replicas: 1,
-					Config: headscalev1beta1.HeadscaleConfig{
-						ServerURL:         "https://headscale.example.com",
-						ListenAddr:        "0.0.0.0:8080",
-						GRPCListenAddr:    "0.0.0.0:50443",
-						MetricsListenAddr: "0.0.0.0:9090",
-					},
+					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080","grpc_listen_addr":"0.0.0.0:50443","metrics_listen_addr":"0.0.0.0:9090"}`),
 					PersistentVolumeClaim: headscalev1beta1.PersistentVolumeClaimConfig{
 						Size: resource.NewQuantity(128*1024*1024, resource.BinarySI),
 					},
@@ -193,20 +193,30 @@ var _ = Describe("Headscale Controller", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			By("Verifying status condition was set with ObservedGeneration")
+			By("Verifying status conditions were set with ObservedGeneration")
+			// envtest has no kubelet, so the StatefulSet never reports ready
+			// replicas and the Ready condition stays False (NotReady). Assert the
+			// status plumbing instead via ConfigValid, which the operator computes
+			// itself, and confirm a Ready condition is present and observed.
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, typeNamespacedName, createdHeadscale)
 				if err != nil {
 					return false
 				}
+				configValid := false
+				readyObserved := false
 				for _, condition := range createdHeadscale.Status.Conditions {
-					if condition.Type == readyConditionType &&
+					if condition.Type == "ConfigValid" &&
 						condition.Status == metav1.ConditionTrue &&
 						condition.ObservedGeneration == createdHeadscale.Generation {
-						return true
+						configValid = true
+					}
+					if condition.Type == readyConditionType &&
+						condition.ObservedGeneration == createdHeadscale.Generation {
+						readyObserved = true
 					}
 				}
-				return false
+				return configValid && readyObserved
 			}, timeout, interval).Should(BeTrue())
 		})
 
@@ -221,10 +231,7 @@ var _ = Describe("Headscale Controller", func() {
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  "v0.28.0",
 					Replicas: 1,
-					Config: headscalev1beta1.HeadscaleConfig{
-						ServerURL:  "https://headscale.example.com",
-						ListenAddr: "0.0.0.0:8080",
-					},
+					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 					APIKey: headscalev1beta1.APIKeyConfig{
 						AutoManage: &autoManage,
 						SecretName: "test-api-key-automanage",
@@ -282,10 +289,7 @@ var _ = Describe("Headscale Controller", func() {
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  "v0.28.0",
 					Replicas: 1,
-					Config: headscalev1beta1.HeadscaleConfig{
-						ServerURL:  "https://headscale.example.com",
-						ListenAddr: "0.0.0.0:8080",
-					},
+					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 					APIKey: headscalev1beta1.APIKeyConfig{
 						AutoManage: &autoManage,
 						SecretName: "test-api-key-no-automanage",
@@ -342,10 +346,7 @@ var _ = Describe("Headscale Controller", func() {
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  "v0.28.0",
 					Replicas: 1,
-					Config: headscalev1beta1.HeadscaleConfig{
-						ServerURL:  "https://headscale.example.com",
-						ListenAddr: "0.0.0.0:8080",
-					},
+					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 				},
 			}
 			Expect(k8sClient.Create(ctx, headscale)).To(Succeed())
@@ -384,7 +385,7 @@ var _ = Describe("Headscale Controller", func() {
 				if err != nil {
 					return err
 				}
-				headscale.Spec.Config.ServerURL = "https://new-headscale.example.com"
+				headscale.Spec.Config = rawConfig(`{"server_url":"https://new-headscale.example.com","listen_addr":"0.0.0.0:8080"}`)
 				return k8sClient.Update(ctx, headscale)
 			}, timeout, interval).Should(Succeed())
 
@@ -420,10 +421,7 @@ var _ = Describe("Headscale Controller", func() {
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  "v0.28.0",
 					Replicas: 1,
-					Config: headscalev1beta1.HeadscaleConfig{
-						ServerURL:  "https://headscale.example.com",
-						ListenAddr: "0.0.0.0:8080",
-					},
+					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 				},
 			}
 			Expect(k8sClient.Create(ctx, headscale)).To(Succeed())
@@ -491,10 +489,7 @@ var _ = Describe("Headscale Controller", func() {
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  "v0.28.0",
 					Replicas: 3,
-					Config: headscalev1beta1.HeadscaleConfig{
-						ServerURL:  "https://headscale.example.com",
-						ListenAddr: "0.0.0.0:8080",
-					},
+					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 				},
 			}
 			Expect(k8sClient.Create(ctx, headscale)).To(Succeed())
@@ -543,10 +538,7 @@ var _ = Describe("Headscale Controller", func() {
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  "v0.28.0",
 					Replicas: 1,
-					Config: headscalev1beta1.HeadscaleConfig{
-						ServerURL:  "https://headscale.example.com",
-						ListenAddr: "0.0.0.0:8080",
-					},
+					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 					PersistentVolumeClaim: headscalev1beta1.PersistentVolumeClaimConfig{
 						Size: customSize,
 					},
@@ -601,10 +593,7 @@ var _ = Describe("Headscale Controller", func() {
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  "v0.28.0",
 					Replicas: 1,
-					Config: headscalev1beta1.HeadscaleConfig{
-						ServerURL:  "https://headscale.example.com",
-						ListenAddr: "0.0.0.0:8080",
-					},
+					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 				},
 			}
 			Expect(k8sClient.Create(ctx, headscale)).To(Succeed())
@@ -681,10 +670,7 @@ var _ = Describe("Headscale Controller", func() {
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  "v0.28.0",
 					Replicas: 1,
-					Config: headscalev1beta1.HeadscaleConfig{
-						ServerURL:  "https://headscale.example.com",
-						ListenAddr: "0.0.0.0:8080",
-					},
+					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 					ExtraEnv: []corev1.EnvVar{
 						{
 							Name:  "EXTRA_VAR",
@@ -775,25 +761,20 @@ var _ = Describe("Headscale Controller", func() {
 
 	Context("Helper function tests", func() {
 		It("should compute config hash correctly", func() {
-			By("Testing computeConfigHashFromSpec with same config")
-			config1 := &headscalev1beta1.HeadscaleConfig{
-				ServerURL:  "https://example.com",
-				ListenAddr: "0.0.0.0:8080",
+			hashFor := func(jsonStr string) string {
+				raw := rawConfig(jsonStr)
+				rendered, err := renderConfigYAML(raw, parseConfigView(raw))
+				Expect(err).NotTo(HaveOccurred())
+				return computeConfigHash(rendered)
 			}
-			config2 := &headscalev1beta1.HeadscaleConfig{
-				ServerURL:  "https://example.com",
-				ListenAddr: "0.0.0.0:8080",
-			}
-			hash1 := computeConfigHashFromSpec(config1)
-			hash2 := computeConfigHashFromSpec(config2)
+
+			By("Testing equal configs produce equal hashes (independent of key order)")
+			hash1 := hashFor(`{"server_url":"https://example.com","listen_addr":"0.0.0.0:8080"}`)
+			hash2 := hashFor(`{"listen_addr":"0.0.0.0:8080","server_url":"https://example.com"}`)
 			Expect(hash1).To(Equal(hash2))
 
-			By("Testing computeConfigHashFromSpec with different config")
-			config3 := &headscalev1beta1.HeadscaleConfig{
-				ServerURL:  "https://different.com",
-				ListenAddr: "0.0.0.0:8080",
-			}
-			hash3 := computeConfigHashFromSpec(config3)
+			By("Testing different configs produce different hashes")
+			hash3 := hashFor(`{"server_url":"https://different.com","listen_addr":"0.0.0.0:8080"}`)
 			Expect(hash1).NotTo(Equal(hash3))
 		})
 
@@ -819,52 +800,99 @@ var _ = Describe("Headscale Controller", func() {
 			Expect(port).To(Equal(int32(8080)))
 		})
 
-		It("should preserve empty DERP URLs in marshaled config", func() {
-			By("Creating a config with explicitly empty DERP URLs")
-			config := &headscalev1beta1.HeadscaleConfig{
-				ServerURL:  "https://headscale.example.com",
-				ListenAddr: "0.0.0.0:8080",
-				DERP: headscalev1beta1.DERPConfig{
-					URLs:  []string{},
-					Paths: []string{"/etc/derp/derp.yaml"},
-				},
-			}
-
-			By("Marshaling the config to YAML and unmarshaling to map")
-			data, err := yaml.Marshal(config)
+		It("should pass arbitrary/unknown config keys through to config.yaml verbatim", func() {
+			By("Rendering a config containing keys the operator does not model")
+			// randomize_client_port was removed in headscale 0.29 (issue #105);
+			// the operator must no longer reason about it — it just passes through
+			// whatever the user sets and lets headscale validate. A nested block
+			// and an arbitrary future key must survive untouched too (issue #95).
+			raw := rawConfig(`{
+				"server_url": "https://headscale.example.com",
+				"randomize_client_port": false,
+				"derp": {"urls": [], "paths": ["/etc/derp/derp.yaml"]},
+				"some_future_key": {"nested": "value"}
+			}`)
+			rendered, err := renderConfigYAML(raw, parseConfigView(raw))
 			Expect(err).NotTo(HaveOccurred())
-			var result map[string]any
-			Expect(yaml.Unmarshal(data, &result)).To(Succeed())
 
-			By("Verifying the derp.urls key is present and is an empty list")
+			var result map[string]any
+			Expect(yaml.Unmarshal(rendered, &result)).To(Succeed())
+
+			By("Verifying user-provided keys are preserved unchanged")
+			Expect(result).To(HaveKeyWithValue("randomize_client_port", false))
+			Expect(result).To(HaveKeyWithValue("server_url", "https://headscale.example.com"))
 			derp, ok := result["derp"].(map[string]any)
 			Expect(ok).To(BeTrue(), "expected derp key in config")
-			urls, exists := derp["urls"]
-			Expect(exists).To(BeTrue(), "expected urls key in derp config")
-			Expect(urls).To(BeEmpty(), "expected urls to be an empty list")
+			Expect(derp).To(HaveKey("urls"))
+			Expect(derp["urls"]).To(BeEmpty())
+			Expect(derp["paths"]).To(ConsistOf("/etc/derp/derp.yaml"))
+			Expect(result).To(HaveKey("some_future_key"))
 		})
 
-		It("should omit DERP URLs when left nil to allow CRD defaults", func() {
-			By("Creating a config with nil DERP URLs")
-			config := &headscalev1beta1.HeadscaleConfig{
-				ServerURL:  "https://headscale.example.com",
-				ListenAddr: "0.0.0.0:8080",
-				DERP: headscalev1beta1.DERPConfig{
-					Paths: []string{"/etc/derp/derp.yaml"},
-				},
-			}
-
-			By("Marshaling the config to YAML and unmarshaling to map")
-			data, err := yaml.Marshal(config)
+		It("should inject wiring defaults only when unset and preserve user values", func() {
+			By("Rendering a config that omits the wiring keys")
+			raw := rawConfig(`{"server_url":"https://headscale.example.com"}`)
+			rendered, err := renderConfigYAML(raw, parseConfigView(raw))
 			Expect(err).NotTo(HaveOccurred())
 			var result map[string]any
-			Expect(yaml.Unmarshal(data, &result)).To(Succeed())
+			Expect(yaml.Unmarshal(rendered, &result)).To(Succeed())
+			Expect(result).To(HaveKeyWithValue("listen_addr", defaultListenAddr))
+			Expect(result).To(HaveKeyWithValue("metrics_listen_addr", defaultMetricsListenAddr))
+			Expect(result).To(HaveKeyWithValue("grpc_listen_addr", defaultGRPCListenAddr))
+			Expect(result).To(HaveKeyWithValue("unix_socket", defaultUnixSocket))
 
-			By("Verifying the urls key is absent from derp config")
-			derp, ok := result["derp"].(map[string]any)
-			Expect(ok).To(BeTrue(), "expected derp key in config")
-			_, exists := derp["urls"]
-			Expect(exists).To(BeFalse(), "nil URLs should be omitted to allow CRD defaults")
+			By("Rendering a config that sets a wiring key explicitly")
+			raw = rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"127.0.0.1:9999"}`)
+			rendered, err = renderConfigYAML(raw, parseConfigView(raw))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(yaml.Unmarshal(rendered, &result)).To(Succeed())
+			Expect(result).To(HaveKeyWithValue("listen_addr", "127.0.0.1:9999"))
+		})
+
+		It("should pass headscale-only keys through untouched (no extra defaulting)", func() {
+			By("Rendering a config with keys the operator does not consume")
+			raw := rawConfig(`{"server_url":"https://h.example.com","database":{"type":"sqlite"}}`)
+			rendered, err := renderConfigYAML(raw, parseConfigView(raw))
+			Expect(err).NotTo(HaveOccurred())
+			var result map[string]any
+			Expect(yaml.Unmarshal(rendered, &result)).To(Succeed())
+
+			By("Not inventing noise, prefixes, or a sqlite path the user didn't set")
+			Expect(result).NotTo(HaveKey("noise"))
+			Expect(result).NotTo(HaveKey("prefixes"))
+			db, ok := result["database"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(db).To(HaveKeyWithValue("type", "sqlite"))
+			Expect(db).NotTo(HaveKey("sqlite"))
+		})
+
+		It("should parse the operator-relevant config view with defaults", func() {
+			By("Defaulting every wiring key when the config is empty")
+			view := parseConfigView(rawConfig(`{}`))
+			Expect(view.ServerURL).To(BeEmpty())
+			Expect(view.ListenAddr).To(Equal(defaultListenAddr))
+			Expect(view.MetricsListenAddr).To(Equal(defaultMetricsListenAddr))
+			Expect(view.GRPCListenAddr).To(Equal(defaultGRPCListenAddr))
+			Expect(view.UnixSocket).To(Equal(defaultUnixSocket))
+			Expect(view.PolicyMode).To(Equal(defaultPolicyMode))
+
+			By("Reading user-set values, including nested policy.mode")
+			view = parseConfigView(rawConfig(`{"server_url":"https://h.example.com","grpc_listen_addr":"0.0.0.0:7000","policy":{"mode":"database"}}`))
+			Expect(view.ServerURL).To(Equal("https://h.example.com"))
+			Expect(view.GRPCListenAddr).To(Equal("0.0.0.0:7000"))
+			Expect(view.PolicyMode).To(Equal("database"))
+		})
+
+		It("should compute ConfigValid based on server_url presence", func() {
+			h := &headscalev1beta1.Headscale{}
+			missing := configValidCondition(h, parseConfigView(rawConfig(`{}`)), nil)
+			Expect(missing.Type).To(Equal("ConfigValid"))
+			Expect(missing.Status).To(Equal(metav1.ConditionFalse))
+			Expect(missing.Reason).To(Equal("MissingServerURL"))
+
+			ok := configValidCondition(h, parseConfigView(rawConfig(`{"server_url":"https://h.example.com"}`)), nil)
+			Expect(ok.Status).To(Equal(metav1.ConditionTrue))
+			Expect(ok.Reason).To(Equal("Valid"))
 		})
 
 		It("should generate correct labels", func() {
@@ -892,10 +920,7 @@ var _ = Describe("Headscale Controller", func() {
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  "v0.28.0",
 					Replicas: 1,
-					Config: headscalev1beta1.HeadscaleConfig{
-						ServerURL:  "https://headscale.example.com",
-						ListenAddr: "0.0.0.0:8080",
-					},
+					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 					ACLPolicy: headscalev1beta1.ACLPolicyConfig{
 						// Missing quotes around object keys — the exact failure mode from issue #75.
 						Inline: `{ acls: [ { action: "accept", src: ["*"], dst: ["*:*"] } ] }`,
@@ -969,5 +994,80 @@ var _ = Describe("validateACLPolicy", func() {
 		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 		Expect(cond.Reason).To(Equal("InvalidPolicy"))
 		Expect(cond.Message).NotTo(BeEmpty())
+	})
+})
+
+var _ = Describe("computeReadyCondition", func() {
+	bg := context.Background()
+
+	newScheme := func() *runtime.Scheme {
+		s := runtime.NewScheme()
+		Expect(corev1.AddToScheme(s)).To(Succeed())
+		Expect(appsv1.AddToScheme(s)).To(Succeed())
+		return s
+	}
+
+	headscale := func() *headscalev1beta1.Headscale {
+		return &headscalev1beta1.Headscale{
+			ObjectMeta: metav1.ObjectMeta{Name: "hs", Namespace: "default", Generation: 1},
+		}
+	}
+
+	statefulSet := func(ready, desired int32) *appsv1.StatefulSet {
+		return &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "hs", Namespace: "default"},
+			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(desired)},
+			Status:     appsv1.StatefulSetStatus{ReadyReplicas: ready},
+		}
+	}
+
+	reconciler := func(objs ...client.Object) (*HeadscaleReconciler, *record.FakeRecorder) {
+		rec := record.NewFakeRecorder(10)
+		c := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(objs...).Build()
+		return &HeadscaleReconciler{Client: c, Scheme: newScheme(), Recorder: rec}, rec
+	}
+
+	It("reports Ready=True when ready replicas meet desired", func() {
+		r, _ := reconciler(statefulSet(1, 1))
+		cond, requeue := r.computeReadyCondition(bg, headscale())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		Expect(requeue).To(BeFalse())
+	})
+
+	It("reports Ready=False StatefulSetMissing when the workload is absent", func() {
+		r, _ := reconciler()
+		cond, requeue := r.computeReadyCondition(bg, headscale())
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(Equal("StatefulSetMissing"))
+		Expect(requeue).To(BeTrue())
+	})
+
+	It("surfaces a crashing headscale container's error and emits an event", func() {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "hs-0",
+				Namespace: "default",
+				Labels:    labelsForHeadscale("hs"),
+			},
+			Status: corev1.PodStatus{
+				ContainerStatuses: []corev1.ContainerStatus{{
+					Name:  "headscale",
+					State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+					LastTerminationState: corev1.ContainerState{
+						Terminated: &corev1.ContainerStateTerminated{
+							ExitCode: 1,
+							Message:  "FATAL: The 'randomize_client_port' configuration key has been removed.",
+						},
+					},
+				}},
+			},
+		}
+		r, rec := reconciler(statefulSet(0, 1), pod)
+		cond, requeue := r.computeReadyCondition(bg, headscale())
+		Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		Expect(cond.Reason).To(Equal("CrashLoopBackOff"))
+		Expect(cond.Message).To(ContainSubstring("randomize_client_port"))
+		Expect(requeue).To(BeTrue())
+		Eventually(rec.Events).Should(Receive(ContainSubstring("randomize_client_port")))
 	})
 })

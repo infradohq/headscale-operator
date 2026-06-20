@@ -12,13 +12,7 @@ The Headscale Operator simplifies the deployment and management of Headscale ins
 - **Automatic Deployment**: Manages StatefulSets, Services, ConfigMaps, and PersistentVolumes
 - **API Key Management**: Automatic API key creation and rotation with configurable expiration
 - **ACL Policy Management**: Declarative auto-approval of subnet routes and exit nodes via the `HeadscaleAutoApprover` CRD
-- **Full Config Support**: Supports all Headscale configuration options including:
-  - Database configuration (SQLite/PostgreSQL)
-  - DERP server configuration
-  - DNS and MagicDNS settings
-  - OIDC authentication
-  - TLS/Let's Encrypt integration
-  - Policy configuration
+- **Full Config Support**: `spec.config` is a free-form passthrough to Headscale's `config.yaml` — every key Headscale supports works (database, DERP, DNS/MagicDNS, OIDC, TLS/Let's Encrypt, policy, …), and new/renamed keys in future Headscale releases need no operator change. Headscale validates the config itself at startup; the result is reflected on the `Headscale` status.
 - **Observability**: Built-in metrics endpoint for monitoring
 - **Production Ready**: Supports high availability with persistent storage
 
@@ -100,14 +94,25 @@ spec:
   config:
     server_url: http://vpn.headscale.local
     grpc_allow_insecure: true
+    # Persistent paths must live under /var/lib/headscale (the data volume mount).
+    noise:
+      private_key_path: /var/lib/headscale/noise_private.key
+    prefixes:
+      v4: 100.64.0.0/10
+      v6: fd7a:115c:a1e0::/48
     derp:
       server:
-        enabled: false    
+        enabled: false
+      urls:
+        - https://controlplane.tailscale.com/derpmap/default
     disable_check_updates: false
     database:
       type: sqlite
+      sqlite:
+        path: /var/lib/headscale/db.sqlite
     dns:
       magic_dns: false
+      override_local_dns: false
   # Automatic API key management (optional)
   api_key:
     auto_manage: true  # Automatically create and rotate API keys
@@ -115,6 +120,24 @@ spec:
     expiration: "2160h"      # API key expires in 90 days (2160 hours)
     rotation_buffer: "240h"   # Rotate 10 days (240 hours) before expiration
 ```
+
+> **About `spec.config`:** this maps 1:1 to Headscale's `config.yaml` and is passed
+> through verbatim — the operator does not validate individual keys, so any option
+> supported by the Headscale version you deploy is accepted (and removed/renamed
+> keys won't break the CRD). Headscale validates the config when it starts; a bad
+> config surfaces as a crashing pod whose error is reported on the `Headscale`
+> resource's `Ready` condition (and as an event). The example above is a complete,
+> minimal config — you own it, so include everything Headscale requires (e.g.
+> `noise.private_key_path`, at least one `prefixes` range, a `database.sqlite.path`
+> when using SQLite, a DERP map via `derp.urls` or an embedded `derp.server`, and a
+> `dns` block — `dns.override_local_dns` defaults to `true`, which then requires
+> `dns.nameservers.global`). Put persistent paths under
+> `/var/lib/headscale` (the data volume mount). The only keys the operator fills in
+> for you are the ones it has to wire to Kubernetes itself, when omitted:
+> `listen_addr` (`0.0.0.0:8080`), `metrics_listen_addr` (`0.0.0.0:9090`),
+> `grpc_listen_addr` (`0.0.0.0:50443`), and `unix_socket`
+> (`/var/run/headscale/headscale.sock`); it also requires `server_url`
+> (`ConfigValid` condition).
 
 Apply the configuration:
 
