@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,6 +21,13 @@ import (
 	headscalev1beta1 "github.com/infradohq/headscale-operator/api/v1beta1"
 	// +kubebuilder:scaffold:imports
 )
+
+// rawConfig wraps a JSON string as the runtime.RawExtension used by
+// Headscale.Spec.Config. Tests build configs as JSON literals since spec.config
+// is now an opaque passthrough rather than a typed struct.
+func rawConfig(jsonStr string) runtime.RawExtension {
+	return runtime.RawExtension{Raw: []byte(jsonStr)}
+}
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.

@@ -60,11 +60,7 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  "v0.28.0",
 					Replicas: 1,
-					Config: headscalev1beta1.HeadscaleConfig{
-						ServerURL:         "https://headscale.example.com",
-						GRPCListenAddr:    "0.0.0.0:50443",
-						MetricsListenAddr: "0.0.0.0:9090",
-					},
+					Config:   rawConfig(`{"server_url":"https://headscale.example.com","grpc_listen_addr":"0.0.0.0:50443","metrics_listen_addr":"0.0.0.0:9090"}`),
 					PersistentVolumeClaim: headscalev1beta1.PersistentVolumeClaimConfig{
 						Size: resource.NewQuantity(128*1024*1024, resource.BinarySI),
 					},

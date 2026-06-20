@@ -93,14 +93,15 @@ func (r *HeadscaleAutoApproverReconciler) Reconcile(ctx context.Context, req ctr
 		return ctrl.Result{}, err
 	}
 
-	if headscale.Spec.Config.Policy.Mode != policyModeDatabase {
+	policyMode := parseConfigView(headscale.Spec.Config).PolicyMode
+	if policyMode != policyModeDatabase {
 		if err := r.setCondition(ctx, approver, metav1.Condition{
 			Type:   "Ready",
 			Status: metav1.ConditionFalse,
 			Reason: "PolicyModeUnsupported",
 			Message: fmt.Sprintf(
 				"Headscale %q has policy.mode=%q; HeadscaleAutoApprover requires policy.mode=%q",
-				headscale.Name, headscale.Spec.Config.Policy.Mode, policyModeDatabase,
+				headscale.Name, policyMode, policyModeDatabase,
 			),
 		}); err != nil {
 			return ctrl.Result{}, err
@@ -163,7 +164,7 @@ func (r *HeadscaleAutoApproverReconciler) handleDeletion(
 		// Parent already gone — nothing to re-push.
 	case err != nil:
 		log.Error(err, "Failed to fetch parent Headscale during deletion; proceeding with finalizer removal")
-	case headscale.Spec.Config.Policy.Mode == policyModeDatabase:
+	case parseConfigView(headscale.Spec.Config).PolicyMode == policyModeDatabase:
 		if err := r.renderAndPush(ctx, headscale); err != nil {
 			log.Error(err, "Failed to re-push policy during deletion; proceeding with finalizer removal")
 		}

@@ -8,17 +8,32 @@ metadata:
 spec:
   version: "v0.28.0"
   replicas: 1
+  # config is passed through to Headscale's config.yaml verbatim. Any key the
+  # deployed Headscale version supports works here; Headscale validates it at
+  # startup. The operator only fills in the keys it wires itself (listen/metrics/
+  # grpc addrs and unix_socket) — everything Headscale requires is shown below.
+  # Persistent paths must live under /var/lib/headscale (the data volume mount).
   config:
     server_url: http://vpn.headscale.local
     grpc_allow_insecure: true
+    noise:
+      private_key_path: /var/lib/headscale/noise_private.key
+    prefixes:
+      v4: 100.64.0.0/10
+      v6: fd7a:115c:a1e0::/48
     derp:
       server:
-        enabled: false    
+        enabled: false
+      urls:
+        - https://controlplane.tailscale.com/derpmap/default
     disable_check_updates: false
     database:
       type: sqlite
+      sqlite:
+        path: /var/lib/headscale/db.sqlite
     dns:
       magic_dns: false
+      override_local_dns: false
   # API Key management configuration
   api_key:
     auto_manage: true

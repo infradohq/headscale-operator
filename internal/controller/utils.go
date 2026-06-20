@@ -78,8 +78,8 @@ func getAPIKey(ctx context.Context, k8sClient client.Client, headscale *headscal
 // This function is shared across all controllers that need to connect to the Headscale gRPC service.
 // It returns the service address in the format: <service-name>.<namespace>.svc:<port>
 func getGRPCServiceAddress(headscale *headscalev1beta1.Headscale) string {
-	// Extract the gRPC port from the configuration
-	grpcPort := extractPort(headscale.Spec.Config.GRPCListenAddr, 50443)
+	// Extract the gRPC port from the effective config view
+	grpcPort := extractPort(parseConfigView(headscale.Spec.Config).GRPCListenAddr, 50443)
 
 	// Return the service address and let Kubernetes DNS search domain handle the rest
 	return fmt.Sprintf("%s.%s.svc:%d", headscale.Name, headscale.Namespace, grpcPort)
