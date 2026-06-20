@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -27,11 +27,9 @@ import (
 var _ = Describe("Headscale Controller", func() {
 	Context("When reconciling a resource", func() {
 		const (
-			resourceName       = "test-headscale"
-			namespace          = "default"
-			readyConditionType = "Ready"
-			timeout            = time.Second * 10
-			interval           = time.Millisecond * 250
+			resourceName = "test-headscale"
+			timeout      = time.Second * 10
+			interval     = time.Millisecond * 250
 		)
 
 		ctx := context.Background()
@@ -83,7 +81,7 @@ var _ = Describe("Headscale Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: headscalev1beta1.HeadscaleSpec{
-					Version:  "v0.28.0",
+					Version:  testHeadscaleVersion,
 					Replicas: 1,
 					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080","grpc_listen_addr":"0.0.0.0:50443","metrics_listen_addr":"0.0.0.0:9090"}`),
 					PersistentVolumeClaim: headscalev1beta1.PersistentVolumeClaimConfig{
@@ -229,7 +227,7 @@ var _ = Describe("Headscale Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: headscalev1beta1.HeadscaleSpec{
-					Version:  "v0.28.0",
+					Version:  testHeadscaleVersion,
 					Replicas: 1,
 					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 					APIKey: headscalev1beta1.APIKeyConfig{
@@ -267,7 +265,7 @@ var _ = Describe("Headscale Controller", func() {
 					return false
 				}
 				for _, container := range statefulSet.Spec.Template.Spec.Containers {
-					if container.Name == "apikey-manager" {
+					if container.Name == apiKeyManagerContainerName {
 						return true
 					}
 				}
@@ -287,7 +285,7 @@ var _ = Describe("Headscale Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: headscalev1beta1.HeadscaleSpec{
-					Version:  "v0.28.0",
+					Version:  testHeadscaleVersion,
 					Replicas: 1,
 					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 					APIKey: headscalev1beta1.APIKeyConfig{
@@ -325,7 +323,7 @@ var _ = Describe("Headscale Controller", func() {
 					return false
 				}
 				for _, container := range statefulSet.Spec.Template.Spec.Containers {
-					if container.Name == "apikey-manager" {
+					if container.Name == apiKeyManagerContainerName {
 						return true
 					}
 				}
@@ -344,7 +342,7 @@ var _ = Describe("Headscale Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: headscalev1beta1.HeadscaleSpec{
-					Version:  "v0.28.0",
+					Version:  testHeadscaleVersion,
 					Replicas: 1,
 					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 				},
@@ -419,7 +417,7 @@ var _ = Describe("Headscale Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: headscalev1beta1.HeadscaleSpec{
-					Version:  "v0.28.0",
+					Version:  testHeadscaleVersion,
 					Replicas: 1,
 					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 				},
@@ -469,7 +467,7 @@ var _ = Describe("Headscale Controller", func() {
 			}
 
 			nonExistentName := types.NamespacedName{
-				Name:      "non-existent-resource",
+				Name:      nonExistentResource,
 				Namespace: namespace,
 			}
 
@@ -487,7 +485,7 @@ var _ = Describe("Headscale Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: headscalev1beta1.HeadscaleSpec{
-					Version:  "v0.28.0",
+					Version:  testHeadscaleVersion,
 					Replicas: 3,
 					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 				},
@@ -536,7 +534,7 @@ var _ = Describe("Headscale Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: headscalev1beta1.HeadscaleSpec{
-					Version:  "v0.28.0",
+					Version:  testHeadscaleVersion,
 					Replicas: 1,
 					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 					PersistentVolumeClaim: headscalev1beta1.PersistentVolumeClaimConfig{
@@ -591,7 +589,7 @@ var _ = Describe("Headscale Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: headscalev1beta1.HeadscaleSpec{
-					Version:  "v0.28.0",
+					Version:  testHeadscaleVersion,
 					Replicas: 1,
 					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 				},
@@ -642,7 +640,7 @@ var _ = Describe("Headscale Controller", func() {
 			for _, c := range statefulSet.Spec.Template.Spec.Containers {
 				containerNames = append(containerNames, c.Name)
 			}
-			Expect(containerNames).To(ContainElements("headscale", "apikey-manager"))
+			Expect(containerNames).To(ContainElements(headscaleAppName, apiKeyManagerContainerName))
 
 			By("Verifying all containers have restricted PodSecurity container security context")
 			for _, container := range statefulSet.Spec.Template.Spec.Containers {
@@ -668,7 +666,7 @@ var _ = Describe("Headscale Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: headscalev1beta1.HeadscaleSpec{
-					Version:  "v0.28.0",
+					Version:  testHeadscaleVersion,
 					Replicas: 1,
 					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 					ExtraEnv: []corev1.EnvVar{
@@ -679,7 +677,7 @@ var _ = Describe("Headscale Controller", func() {
 					},
 					ExtraVolumes: []corev1.Volume{
 						{
-							Name: "extra-vol",
+							Name: extraVolumeName,
 							VolumeSource: corev1.VolumeSource{
 								ConfigMap: &corev1.ConfigMapVolumeSource{
 									LocalObjectReference: corev1.LocalObjectReference{
@@ -691,7 +689,7 @@ var _ = Describe("Headscale Controller", func() {
 					},
 					ExtraVolumeMounts: []corev1.VolumeMount{
 						{
-							Name:      "extra-vol",
+							Name:      extraVolumeName,
 							MountPath: "/etc/extra",
 							ReadOnly:  true,
 						},
@@ -737,7 +735,7 @@ var _ = Describe("Headscale Controller", func() {
 			By("Verifying StatefulSet has extra volume")
 			hasExtraVolume := false
 			for _, vol := range statefulSet.Spec.Template.Spec.Volumes {
-				if vol.Name == "extra-vol" {
+				if vol.Name == extraVolumeName {
 					hasExtraVolume = true
 					break
 				}
@@ -747,7 +745,7 @@ var _ = Describe("Headscale Controller", func() {
 			By("Verifying StatefulSet has extra volume mount")
 			hasExtraMount := false
 			for _, mount := range statefulSet.Spec.Template.Spec.Containers[0].VolumeMounts {
-				if mount.Name == "extra-vol" && mount.MountPath == "/etc/extra" && mount.ReadOnly {
+				if mount.Name == extraVolumeName && mount.MountPath == "/etc/extra" && mount.ReadOnly {
 					hasExtraMount = true
 					break
 				}
@@ -899,7 +897,7 @@ var _ = Describe("Headscale Controller", func() {
 			By("Testing labelsForHeadscale")
 			labels := labelsForHeadscale("test-instance")
 			Expect(labels).To(HaveLen(3))
-			Expect(labels["app.kubernetes.io/name"]).To(Equal("headscale"))
+			Expect(labels["app.kubernetes.io/name"]).To(Equal(headscaleAppName))
 			Expect(labels["app.kubernetes.io/instance"]).To(Equal("test-instance"))
 			Expect(labels["app.kubernetes.io/managed-by"]).To(Equal("headscale-operator"))
 		})
@@ -908,7 +906,7 @@ var _ = Describe("Headscale Controller", func() {
 			ctx := context.Background()
 			badPolicyName := types.NamespacedName{
 				Name:      "test-headscale-bad-policy",
-				Namespace: "default",
+				Namespace: namespace,
 			}
 
 			By("Creating the Headscale resource with an invalid inline policy")
@@ -918,7 +916,7 @@ var _ = Describe("Headscale Controller", func() {
 					Namespace: badPolicyName.Namespace,
 				},
 				Spec: headscalev1beta1.HeadscaleSpec{
-					Version:  "v0.28.0",
+					Version:  testHeadscaleVersion,
 					Replicas: 1,
 					Config:   rawConfig(`{"server_url":"https://headscale.example.com","listen_addr":"0.0.0.0:8080"}`),
 					ACLPolicy: headscalev1beta1.ACLPolicyConfig{
@@ -1009,20 +1007,20 @@ var _ = Describe("computeReadyCondition", func() {
 
 	headscale := func() *headscalev1beta1.Headscale {
 		return &headscalev1beta1.Headscale{
-			ObjectMeta: metav1.ObjectMeta{Name: "hs", Namespace: "default", Generation: 1},
+			ObjectMeta: metav1.ObjectMeta{Name: "hs", Namespace: namespace, Generation: 1},
 		}
 	}
 
 	statefulSet := func(ready, desired int32) *appsv1.StatefulSet {
 		return &appsv1.StatefulSet{
-			ObjectMeta: metav1.ObjectMeta{Name: "hs", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "hs", Namespace: namespace},
 			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(desired)},
 			Status:     appsv1.StatefulSetStatus{ReadyReplicas: ready},
 		}
 	}
 
-	reconciler := func(objs ...client.Object) (*HeadscaleReconciler, *record.FakeRecorder) {
-		rec := record.NewFakeRecorder(10)
+	reconciler := func(objs ...client.Object) (*HeadscaleReconciler, *events.FakeRecorder) {
+		rec := events.NewFakeRecorder(10)
 		c := fake.NewClientBuilder().WithScheme(newScheme()).WithObjects(objs...).Build()
 		return &HeadscaleReconciler{Client: c, Scheme: newScheme(), Recorder: rec}, rec
 	}
@@ -1046,12 +1044,12 @@ var _ = Describe("computeReadyCondition", func() {
 		pod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "hs-0",
-				Namespace: "default",
+				Namespace: namespace,
 				Labels:    labelsForHeadscale("hs"),
 			},
 			Status: corev1.PodStatus{
 				ContainerStatuses: []corev1.ContainerStatus{{
-					Name:  "headscale",
+					Name:  headscaleAppName,
 					State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
 					LastTerminationState: corev1.ContainerState{
 						Terminated: &corev1.ContainerStateTerminated{

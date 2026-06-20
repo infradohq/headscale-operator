@@ -79,9 +79,9 @@ func (r *HeadscalePreAuthKeyReconciler) Reconcile(ctx context.Context, req ctrl.
 		if apierrors.IsNotFound(err) {
 			log.Error(err, "Referenced Headscale instance not found", "HeadscaleRef", preAuthKey.Spec.HeadscaleRef)
 			if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-				Type:    "Ready",
+				Type:    readyConditionType,
 				Status:  metav1.ConditionFalse,
-				Reason:  "HeadscaleNotFound",
+				Reason:  headscaleNotFoundReason,
 				Message: fmt.Sprintf("Referenced Headscale instance %s not found", preAuthKey.Spec.HeadscaleRef),
 			}); err != nil {
 				return ctrl.Result{}, err
@@ -102,7 +102,7 @@ func (r *HeadscalePreAuthKeyReconciler) Reconcile(ctx context.Context, req ctrl.
 	if preAuthKey.Status.KeyID != "" {
 		// PreAuth key already created
 		if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-			Type:    "Ready",
+			Type:    readyConditionType,
 			Status:  metav1.ConditionTrue,
 			Reason:  "PreAuthKeyReady",
 			Message: "PreAuth key is ready",
@@ -116,7 +116,7 @@ func (r *HeadscalePreAuthKeyReconciler) Reconcile(ctx context.Context, req ctrl.
 	if err := r.createPreAuthKey(ctx, headscale, userID, preAuthKey); err != nil {
 		log.Error(err, "Failed to create preauth key in Headscale")
 		if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-			Type:    "Ready",
+			Type:    readyConditionType,
 			Status:  metav1.ConditionFalse,
 			Reason:  "PreAuthKeyCreationFailed",
 			Message: fmt.Sprintf("Failed to create preauth key: %v", err),
@@ -128,7 +128,7 @@ func (r *HeadscalePreAuthKeyReconciler) Reconcile(ctx context.Context, req ctrl.
 
 	// Update status to indicate preauth key is ready
 	if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-		Type:    "Ready",
+		Type:    readyConditionType,
 		Status:  metav1.ConditionTrue,
 		Reason:  "PreAuthKeyCreated",
 		Message: "PreAuth key successfully created",
@@ -162,7 +162,7 @@ func (r *HeadscalePreAuthKeyReconciler) resolveUserID(
 	if preAuthKey.Spec.HeadscaleUserRef != "" && preAuthKey.Spec.UserID != 0 {
 		log.Error(nil, "Only one of HeadscaleUserRef or UserID should be specified")
 		if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-			Type:    "Ready",
+			Type:    readyConditionType,
 			Status:  metav1.ConditionFalse,
 			Reason:  "InvalidSpec",
 			Message: "Only one of HeadscaleUserRef or UserID should be specified, not both",
@@ -175,7 +175,7 @@ func (r *HeadscalePreAuthKeyReconciler) resolveUserID(
 	if preAuthKey.Spec.HeadscaleUserRef == "" && preAuthKey.Spec.UserID == 0 && len(preAuthKey.Spec.Tags) == 0 {
 		log.Error(nil, "Tags must be set when neither HeadscaleUserRef nor UserID is specified")
 		if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-			Type:    "Ready",
+			Type:    readyConditionType,
 			Status:  metav1.ConditionFalse,
 			Reason:  "InvalidSpec",
 			Message: "Tags must be non-empty when neither HeadscaleUserRef nor UserID is specified",
@@ -197,9 +197,9 @@ func (r *HeadscalePreAuthKeyReconciler) resolveUserID(
 		if apierrors.IsNotFound(err) {
 			log.Error(err, "Referenced HeadscaleUser not found", "HeadscaleUserRef", preAuthKey.Spec.HeadscaleUserRef)
 			if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-				Type:    "Ready",
+				Type:    readyConditionType,
 				Status:  metav1.ConditionFalse,
-				Reason:  "UserNotFound",
+				Reason:  userNotFoundReason,
 				Message: fmt.Sprintf("Referenced HeadscaleUser %s not found", preAuthKey.Spec.HeadscaleUserRef),
 			}); err != nil {
 				return 0, ctrl.Result{}, true, err
@@ -213,9 +213,9 @@ func (r *HeadscalePreAuthKeyReconciler) resolveUserID(
 	if headscaleUser.Status.UserID == "" {
 		log.Info("User not yet created in Headscale, waiting", "HeadscaleUserRef", preAuthKey.Spec.HeadscaleUserRef)
 		if err := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-			Type:    "Ready",
+			Type:    readyConditionType,
 			Status:  metav1.ConditionFalse,
-			Reason:  "UserNotReady",
+			Reason:  userNotReadyReason,
 			Message: fmt.Sprintf("User %s not yet created in Headscale", preAuthKey.Spec.HeadscaleUserRef),
 		}); err != nil {
 			return 0, ctrl.Result{}, true, err
@@ -227,7 +227,7 @@ func (r *HeadscalePreAuthKeyReconciler) resolveUserID(
 	if err != nil {
 		log.Error(err, "Failed to parse user ID from HeadscaleUser")
 		if updateErr := r.updateStatusCondition(ctx, preAuthKey, metav1.Condition{
-			Type:    "Ready",
+			Type:    readyConditionType,
 			Status:  metav1.ConditionFalse,
 			Reason:  "InvalidUserID",
 			Message: fmt.Sprintf("Failed to parse user ID: %v", err),

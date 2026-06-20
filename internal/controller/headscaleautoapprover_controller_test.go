@@ -19,7 +19,6 @@ var _ = Describe("HeadscaleAutoApprover Controller", func() {
 	Context("When reconciling a resource without a parent Headscale", func() {
 		const (
 			resourceName    = "test-autoapprover"
-			namespace       = "default"
 			cleanupTimeout  = 10 * time.Second
 			cleanupInterval = 250 * time.Millisecond
 		)
@@ -43,7 +42,7 @@ var _ = Describe("HeadscaleAutoApprover Controller", func() {
 					Spec: headscalev1beta1.HeadscaleAutoApproverSpec{
 						HeadscaleRef: "missing-headscale",
 						Routes: []headscalev1beta1.AutoApproverRoute{
-							{CIDR: "10.0.0.0/8", Tags: []string{"tag:router"}},
+							{CIDR: routerCIDR, Tags: []string{routerTag}},
 						},
 					},
 				}
@@ -84,10 +83,10 @@ var _ = Describe("HeadscaleAutoApprover Controller", func() {
 
 			updated := &headscalev1beta1.HeadscaleAutoApprover{}
 			Expect(k8sClient.Get(ctx, typeNamespacedName, updated)).To(Succeed())
-			cond := findCondition(updated.Status.Conditions, "Ready")
+			cond := findCondition(updated.Status.Conditions, readyConditionType)
 			Expect(cond).NotTo(BeNil())
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-			Expect(cond.Reason).To(Equal("HeadscaleNotFound"))
+			Expect(cond.Reason).To(Equal(headscaleNotFoundReason))
 		})
 	})
 })
@@ -96,7 +95,7 @@ var _ = Describe("buildPolicyDocument", func() {
 	It("merges the inline base, tag owners, and approver entries deterministically", func() {
 		base := &headscalev1beta1.ACLPolicyConfig{
 			TagOwners: map[string][]string{
-				"tag:router": {"group:admin"},
+				routerTag: {"group:admin"},
 			},
 			Inline: `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`,
 		}
@@ -104,7 +103,7 @@ var _ = Describe("buildPolicyDocument", func() {
 			{
 				Spec: headscalev1beta1.HeadscaleAutoApproverSpec{
 					Routes: []headscalev1beta1.AutoApproverRoute{
-						{CIDR: "10.0.0.0/8", Tags: []string{"tag:router"}},
+						{CIDR: routerCIDR, Tags: []string{routerTag}},
 					},
 					ExitNodeTags: []string{"tag:exit"},
 				},
@@ -112,8 +111,8 @@ var _ = Describe("buildPolicyDocument", func() {
 			{
 				Spec: headscalev1beta1.HeadscaleAutoApproverSpec{
 					Routes: []headscalev1beta1.AutoApproverRoute{
-						{CIDR: "10.0.0.0/8", Tags: []string{"tag:router"}}, // duplicate
-						{CIDR: "192.168.0.0/16", Tags: []string{"tag:router"}},
+						{CIDR: routerCIDR, Tags: []string{routerTag}}, // duplicate
+						{CIDR: "192.168.0.0/16", Tags: []string{routerTag}},
 					},
 				},
 			},
@@ -132,10 +131,10 @@ var _ = Describe("buildPolicyDocument", func() {
 		Expect(ok).To(BeTrue())
 		routes, ok := auto["routes"].(map[string]any)
 		Expect(ok).To(BeTrue())
-		Expect(routes).To(HaveKey("10.0.0.0/8"))
+		Expect(routes).To(HaveKey(routerCIDR))
 		Expect(routes).To(HaveKey("192.168.0.0/16"))
 		// Duplicate tag must not be repeated.
-		Expect(routes["10.0.0.0/8"]).To(HaveLen(1))
+		Expect(routes[routerCIDR]).To(HaveLen(1))
 		Expect(auto["exitNode"]).To(ContainElement("tag:exit"))
 	})
 
