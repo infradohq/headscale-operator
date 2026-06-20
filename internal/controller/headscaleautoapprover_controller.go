@@ -1,11 +1,11 @@
 package controller
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
-	"sort"
 
 	"github.com/tailscale/hujson"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -78,9 +78,9 @@ func (r *HeadscaleAutoApproverReconciler) Reconcile(ctx context.Context, req ctr
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			if err := r.setCondition(ctx, approver, metav1.Condition{
-				Type:    "Ready",
+				Type:    readyConditionType,
 				Status:  metav1.ConditionFalse,
-				Reason:  "HeadscaleNotFound",
+				Reason:  headscaleNotFoundReason,
 				Message: fmt.Sprintf("Referenced Headscale %q not found", approver.Spec.HeadscaleRef),
 			}); err != nil {
 				return ctrl.Result{}, err
@@ -96,7 +96,7 @@ func (r *HeadscaleAutoApproverReconciler) Reconcile(ctx context.Context, req ctr
 	policyMode := parseConfigView(headscale.Spec.Config).PolicyMode
 	if policyMode != policyModeDatabase {
 		if err := r.setCondition(ctx, approver, metav1.Condition{
-			Type:   "Ready",
+			Type:   readyConditionType,
 			Status: metav1.ConditionFalse,
 			Reason: "PolicyModeUnsupported",
 			Message: fmt.Sprintf(
@@ -114,7 +114,7 @@ func (r *HeadscaleAutoApproverReconciler) Reconcile(ctx context.Context, req ctr
 
 	if err := r.renderAndPush(ctx, headscale); err != nil {
 		if err := r.setCondition(ctx, approver, metav1.Condition{
-			Type:    "Ready",
+			Type:    readyConditionType,
 			Status:  metav1.ConditionFalse,
 			Reason:  "PolicyPushFailed",
 			Message: err.Error(),
@@ -127,7 +127,7 @@ func (r *HeadscaleAutoApproverReconciler) Reconcile(ctx context.Context, req ctr
 	}
 
 	if err := r.setCondition(ctx, approver, metav1.Condition{
-		Type:    "Ready",
+		Type:    readyConditionType,
 		Status:  metav1.ConditionTrue,
 		Reason:  "PolicyApplied",
 		Message: "Auto-approver entries merged into the active Headscale policy",
@@ -267,7 +267,9 @@ func (r *HeadscaleAutoApproverReconciler) collectApprovers(
 		out = append(out, item)
 	}
 	// Deterministic order keeps SetPolicy idempotent and makes diffs reviewable.
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	slices.SortFunc(out, func(a, b headscalev1beta1.HeadscaleAutoApprover) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
 	return out, nil
 }
 
@@ -419,7 +421,7 @@ func buildPolicyDocument(
 			// Canonicalize: sort + dedupe so user-input ordering doesn't churn
 			// the rendered output and trip up SetPolicy idempotency.
 			sorted := append([]string(nil), principals...)
-			sort.Strings(sorted)
+			slices.Sort(sorted)
 			sorted = slices.Compact(sorted)
 			owners[tag] = sorted
 		}
@@ -455,7 +457,7 @@ func buildPolicyDocument(
 		if len(routes) > 0 {
 			// Sort tag lists per CIDR for deterministic output.
 			for cidr, tags := range routes {
-				sort.Strings(tags)
+				slices.Sort(tags)
 				routes[cidr] = tags
 			}
 			section[policyKeyRoutes] = routes
@@ -465,7 +467,7 @@ func buildPolicyDocument(
 			for t := range exitTagSet {
 				exit = append(exit, t)
 			}
-			sort.Strings(exit)
+			slices.Sort(exit)
 			section[policyKeyExitNode] = exit
 		}
 		doc[policyKeyAutoApprovers] = section

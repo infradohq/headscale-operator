@@ -73,7 +73,7 @@ func configValidCondition(h *headscalev1beta1.Headscale, view headscaleConfigVie
 func (r *HeadscaleReconciler) computeReadyCondition(ctx context.Context, h *headscalev1beta1.Headscale) (metav1.Condition, bool) {
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: h.Name, Namespace: h.Namespace}, sts); err != nil {
-		return newCondition(h, "Ready", metav1.ConditionFalse, "StatefulSetMissing",
+		return newCondition(h, readyConditionType, metav1.ConditionFalse, "StatefulSetMissing",
 			"Waiting for the Headscale StatefulSet to be created"), true
 	}
 
@@ -83,7 +83,7 @@ func (r *HeadscaleReconciler) computeReadyCondition(ctx context.Context, h *head
 	}
 
 	if sts.Status.ReadyReplicas >= desired {
-		return newCondition(h, "Ready", metav1.ConditionTrue, "Reconciled",
+		return newCondition(h, readyConditionType, metav1.ConditionTrue, "Reconciled",
 			fmt.Sprintf("Headscale is running (%d/%d replicas ready)", sts.Status.ReadyReplicas, desired)), false
 	}
 
@@ -95,14 +95,14 @@ func (r *HeadscaleReconciler) computeReadyCondition(ctx context.Context, h *head
 		// Only emit an event when the failure is new or has changed, so a
 		// persistently crashing pod doesn't spam the event stream.
 		if r.Recorder != nil {
-			if prev := meta.FindStatusCondition(h.Status.Conditions, "Ready"); prev == nil ||
+			if prev := meta.FindStatusCondition(h.Status.Conditions, readyConditionType); prev == nil ||
 				prev.Reason != reason || prev.Message != message {
-				r.Recorder.Event(h, corev1.EventTypeWarning, reason, message)
+				r.Recorder.Eventf(h, nil, corev1.EventTypeWarning, reason, "Reconcile", "%s", message)
 			}
 		}
 	}
 
-	return newCondition(h, "Ready", metav1.ConditionFalse, reason, message), true
+	return newCondition(h, readyConditionType, metav1.ConditionFalse, reason, message), true
 }
 
 // headscalePodFailure looks for a failing headscale container among the pods of
@@ -116,7 +116,7 @@ func (r *HeadscaleReconciler) headscalePodFailure(ctx context.Context, h *headsc
 
 	for i := range pods.Items {
 		for _, cs := range pods.Items[i].Status.ContainerStatuses {
-			if cs.Name != "headscale" {
+			if cs.Name != headscaleAppName {
 				continue
 			}
 

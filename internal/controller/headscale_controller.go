@@ -16,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,7 +30,7 @@ import (
 type HeadscaleReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Recorder events.EventRecorder
 }
 
 // notReadyRequeue is how long to wait before re-checking workload readiness when
@@ -131,7 +131,7 @@ func (r *HeadscaleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// the next spec change requeues us.
 	if renderErr != nil {
 		log.Error(renderErr, "Failed to render headscale config")
-		readyCond := newCondition(headscale, "Ready", metav1.ConditionFalse, "ConfigInvalid", renderErr.Error())
+		readyCond := newCondition(headscale, readyConditionType, metav1.ConditionFalse, "ConfigInvalid", renderErr.Error())
 		if err := r.updateStatus(ctx, headscale, configCond, policyCond, readyCond); err != nil {
 			log.Error(err, "Failed to update Headscale status")
 		}
@@ -421,7 +421,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 	// Build container list starting with Headscale
 	containers := []corev1.Container{
 		{
-			Name:            "headscale",
+			Name:            headscaleAppName,
 			Image:           image,
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			// Fall back to the container logs for the termination message so a
@@ -429,7 +429,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 			// surfaces on the Headscale status instead of being lost.
 			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			Command: []string{
-				"headscale",
+				headscaleAppName,
 				"serve",
 			},
 			Ports: []corev1.ContainerPort{
@@ -516,7 +516,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 	if autoManage {
 		// Add socket volume for communication between Headscale and API key manager
 		volumes = append(volumes, corev1.Volume{
-			Name: "socket",
+			Name: socketVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
@@ -524,7 +524,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 
 		// Update Headscale container to mount the socket volume
 		containers[0].VolumeMounts = append(containers[0].VolumeMounts, corev1.VolumeMount{
-			Name:      "socket",
+			Name:      socketVolumeName,
 			MountPath: "/var/run/headscale",
 		})
 
@@ -536,7 +536,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 
 		// Add API key manager sidecar
 		containers = append(containers, corev1.Container{
-			Name:            "apikey-manager",
+			Name:            apiKeyManagerContainerName,
 			Image:           managerImage,
 			ImagePullPolicy: corev1.PullIfNotPresent,
 			Args: []string{
@@ -557,7 +557,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{
-					Name:      "socket",
+					Name:      socketVolumeName,
 					MountPath: "/var/run/headscale",
 				},
 			},
@@ -767,7 +767,7 @@ func buildImagePullSecrets(secretNames []string) []corev1.LocalObjectReference {
 // labelsForHeadscale returns the labels for selecting the resources
 func labelsForHeadscale(name string) map[string]string {
 	return map[string]string{
-		"app.kubernetes.io/name":       "headscale",
+		"app.kubernetes.io/name":       headscaleAppName,
 		"app.kubernetes.io/instance":   name,
 		"app.kubernetes.io/managed-by": "headscale-operator",
 	}
@@ -783,6 +783,6 @@ func (r *HeadscaleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
-		Named("headscale").
+		Named(headscaleAppName).
 		Complete(r)
 }

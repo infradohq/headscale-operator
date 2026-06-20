@@ -22,14 +22,11 @@ import (
 var _ = Describe("HeadscalePreAuthKey Controller", func() {
 	Context("When reconciling a HeadscalePreAuthKey resource", func() {
 		const (
-			resourceName            = "test-preauthkey"
-			headscaleName           = "test-headscale-pak"
-			headscaleUserName       = "test-user-pak"
-			namespace               = "default"
-			timeout                 = time.Second * 10
-			interval                = time.Millisecond * 250
-			readyConditionType      = "Ready"
-			headscaleNotFoundReason = "HeadscaleNotFound"
+			resourceName      = "test-preauthkey"
+			headscaleName     = "test-headscale-pak"
+			headscaleUserName = "test-user-pak"
+			timeout           = time.Second * 10
+			interval          = time.Millisecond * 250
 		)
 
 		ctx := context.Background()
@@ -58,14 +55,14 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: headscalev1beta1.HeadscaleSpec{
-					Version:  "v0.28.0",
+					Version:  testHeadscaleVersion,
 					Replicas: 1,
 					Config:   rawConfig(`{"server_url":"https://headscale.example.com","grpc_listen_addr":"0.0.0.0:50443","metrics_listen_addr":"0.0.0.0:9090"}`),
 					PersistentVolumeClaim: headscalev1beta1.PersistentVolumeClaimConfig{
 						Size: resource.NewQuantity(128*1024*1024, resource.BinarySI),
 					},
 					APIKey: headscalev1beta1.APIKeyConfig{
-						SecretName: "test-api-key-secret-pak",
+						SecretName: testAPIKeySecretPAK,
 					},
 				},
 			}
@@ -80,7 +77,7 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 			By("Creating the API key secret")
 			secret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-api-key-secret-pak",
+					Name:      testAPIKeySecretPAK,
 					Namespace: namespace,
 				},
 				Data: map[string][]byte{
@@ -88,7 +85,7 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 				},
 			}
 			secretNamespacedName := types.NamespacedName{
-				Name:      "test-api-key-secret-pak",
+				Name:      testAPIKeySecretPAK,
 				Namespace: namespace,
 			}
 			err := k8sClient.Get(ctx, secretNamespacedName, &corev1.Secret{})
@@ -153,7 +150,7 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 			By("Cleaning up the API key secret")
 			secret := &corev1.Secret{}
 			secretNamespacedName := types.NamespacedName{
-				Name:      "test-api-key-secret-pak",
+				Name:      testAPIKeySecretPAK,
 				Namespace: namespace,
 			}
 			err = k8sClient.Get(ctx, secretNamespacedName, secret)
@@ -286,7 +283,7 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 					Namespace: namespace,
 				},
 				Spec: headscalev1beta1.HeadscalePreAuthKeySpec{
-					HeadscaleRef:     "non-existent-headscale",
+					HeadscaleRef:     nonExistentHeadscale,
 					HeadscaleUserRef: headscaleUserName,
 					Expiration:       "1h",
 				},
@@ -370,7 +367,7 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 				for _, condition := range preAuthKey.Status.Conditions {
 					if condition.Type == readyConditionType &&
 						condition.Status == metav1.ConditionFalse &&
-						condition.Reason == "UserNotFound" &&
+						condition.Reason == userNotFoundReason &&
 						condition.ObservedGeneration == preAuthKey.Generation {
 						return true
 					}
@@ -435,7 +432,7 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 				for _, condition := range preAuthKey.Status.Conditions {
 					if condition.Type == readyConditionType &&
 						condition.Status == metav1.ConditionFalse &&
-						condition.Reason == "UserNotReady" &&
+						condition.Reason == userNotReadyReason &&
 						condition.ObservedGeneration == preAuthKey.Generation {
 						return true
 					}
@@ -489,7 +486,7 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 				for _, condition := range preAuthKey.Status.Conditions {
 					if condition.Type == readyConditionType &&
 						condition.Status == metav1.ConditionFalse &&
-						condition.Reason == "UserNotFound" {
+						condition.Reason == userNotFoundReason {
 						initialTransitionTime = condition.LastTransitionTime
 						return true
 					}
@@ -526,7 +523,7 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 				for _, condition := range preAuthKey.Status.Conditions {
 					if condition.Type == readyConditionType &&
 						condition.Status == metav1.ConditionFalse &&
-						condition.Reason == "UserNotReady" {
+						condition.Reason == userNotReadyReason {
 						return true
 					}
 				}
@@ -700,7 +697,7 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 					Finalizers: []string{headscalePreAuthKeyFinalizer},
 				},
 				Spec: headscalev1beta1.HeadscalePreAuthKeySpec{
-					HeadscaleRef:     "non-existent-headscale",
+					HeadscaleRef:     nonExistentHeadscale,
 					HeadscaleUserRef: headscaleUserName,
 					Expiration:       "1h",
 				},
@@ -795,7 +792,7 @@ var _ = Describe("HeadscalePreAuthKey Controller", func() {
 			}
 
 			nonExistentName := types.NamespacedName{
-				Name:      "non-existent-resource",
+				Name:      nonExistentResource,
 				Namespace: namespace,
 			}
 

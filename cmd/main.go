@@ -165,7 +165,7 @@ func main() {
 	if err := (&controller.HeadscaleReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("headscale"),
+		Recorder: mgr.GetEventRecorder("headscale"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "headscale")
 		os.Exit(1)
