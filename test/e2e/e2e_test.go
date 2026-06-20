@@ -286,7 +286,7 @@ metadata:
   name: %s
   namespace: %s
 spec:
-  version: "v0.28.0"
+  version: "v0.29.1"
   replicas: 1
   config:
     server_url: http://headscale.local
@@ -368,7 +368,7 @@ metadata:
   name: %s
   namespace: %s
 spec:
-  version: "v0.28.0"
+  version: "v0.29.1"
   replicas: 1
   config:
     server_url: http://headscale.local
@@ -515,7 +515,7 @@ metadata:
   name: %s
   namespace: %s
 spec:
-  version: "v0.28.0"
+  version: "v0.29.1"
   replicas: 1
   config:
     server_url: http://headscale.local
@@ -802,7 +802,7 @@ metadata:
   name: %s
   namespace: %s
 spec:
-  version: "v0.28.0"
+  version: "v0.29.1"
   replicas: 1
   config:
     server_url: http://headscale.local
@@ -969,7 +969,7 @@ metadata:
   name: %s
   namespace: %s
 spec:
-  version: "v0.28.0"
+  version: "v0.29.1"
   replicas: 1
   config:
     server_url: http://headscale.local
@@ -1114,7 +1114,7 @@ metadata:
   name: %s
   namespace: %s
 spec:
-  version: "v0.28.0"
+  version: "v0.29.1"
   replicas: 1
   config:
     server_url: http://headscale.local

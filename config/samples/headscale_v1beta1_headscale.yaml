@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: headscale-sample
 spec:
-  version: "v0.28.0"
+  version: "v0.29.1"
   replicas: 1
   # config is passed through to Headscale's config.yaml verbatim. Any key the
   # deployed Headscale version supports works here; Headscale validates it at
