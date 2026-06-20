@@ -4,7 +4,7 @@ package controller
 const (
 	namespace = "default"
 
-	testHeadscaleVersion = "v0.28.0"
+	testHeadscaleVersion = "v0.29.1"
 	nonExistentResource  = "non-existent-resource"
 	nonExistentHeadscale = "non-existent-headscale"
 	extraVolumeName      = "extra-vol"
