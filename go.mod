@@ -7,7 +7,7 @@ require (
 	github.com/go-logr/zapr v1.3.0
 	github.com/juanfont/headscale v0.29.1
 	github.com/onsi/ginkgo/v2 v2.32.0
-	github.com/onsi/gomega v1.42.0
+	github.com/onsi/gomega v1.42.1
 	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd
 	go.uber.org/zap v1.28.0
 	google.golang.org/grpc v1.82.0
