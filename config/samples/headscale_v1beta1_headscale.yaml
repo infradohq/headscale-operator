@@ -37,6 +37,5 @@ spec:
   # API Key management configuration
   api_key:
     auto_manage: true
-    manager_image: apikey-manager
     expiration: "2160h"      # 90 days (90 * 24h)
     rotation_buffer: "240h"   # 10 days (10 * 24h)
