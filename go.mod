@@ -3,7 +3,7 @@ module github.com/infradohq/headscale-operator
 go 1.26.4
 
 require (
-	github.com/go-logr/logr v1.4.3
+	github.com/go-logr/logr v1.4.4
 	github.com/go-logr/zapr v1.3.0
 	github.com/juanfont/headscale v0.29.2
 	github.com/onsi/ginkgo/v2 v2.32.0
