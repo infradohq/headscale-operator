@@ -1,11 +1,11 @@
 module github.com/infradohq/headscale-operator
 
-go 1.26.4
+go 1.26.5
 
 require (
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zapr v1.3.0
-	github.com/juanfont/headscale v0.29.2
+	github.com/juanfont/headscale v0.29.3
 	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.1
 	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd
