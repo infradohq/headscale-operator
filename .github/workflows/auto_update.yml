@@ -37,7 +37,7 @@ jobs:
 
     # Step 3: Set up Go environment.
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version: stable
 
