@@ -116,7 +116,6 @@ spec:
   # Automatic API key management (optional)
   api_key:
     auto_manage: true  # Automatically create and rotate API keys
-    manager_image: headscale-api-key
     expiration: "2160h"      # API key expires in 90 days (2160 hours)
     rotation_buffer: "240h"   # Rotate 10 days (240 hours) before expiration
 ```
