@@ -64,17 +64,15 @@ func NewSecretManager(namespace string) (*SecretManager, error) {
 // CreateOrUpdateSecret creates or updates a secret with the API key
 func (sm *SecretManager) CreateOrUpdateSecret(ctx context.Context, secretName, apiKey string, expiration time.Time) error {
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secretName,
-			Namespace: sm.namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "headscale-operator",
-				"app.kubernetes.io/component":  "api-key",
-			},
-			Annotations: map[string]string{
-				AnnotationExpiration: expiration.Format(time.RFC3339),
-				AnnotationCreatedAt:  time.Now().Format(time.RFC3339),
-			},
+		Name:      secretName,
+		Namespace: sm.namespace,
+		Labels: map[string]string{
+			"app.kubernetes.io/managed-by": "headscale-operator",
+			"app.kubernetes.io/component":  "api-key",
+		},
+		Annotations: map[string]string{
+			AnnotationExpiration: expiration.Format(time.RFC3339),
+			AnnotationCreatedAt:  time.Now().Format(time.RFC3339),
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{

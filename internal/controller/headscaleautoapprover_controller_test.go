@@ -35,10 +35,8 @@ var _ = Describe("HeadscaleAutoApprover Controller", func() {
 			err := k8sClient.Get(ctx, typeNamespacedName, approver)
 			if err != nil && errors.IsNotFound(err) {
 				resource := &headscalev1beta1.HeadscaleAutoApprover{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: namespace,
-					},
+					Name:      resourceName,
+					Namespace: namespace,
 					Spec: headscalev1beta1.HeadscaleAutoApproverSpec{
 						HeadscaleRef: "missing-headscale",
 						Routes: []headscalev1beta1.AutoApproverRoute{

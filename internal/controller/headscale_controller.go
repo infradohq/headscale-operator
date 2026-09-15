@@ -17,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -266,10 +265,8 @@ func (r *HeadscaleReconciler) handleDeletion(ctx context.Context, headscale *hea
 		if autoManage {
 			secretName := apiKeySecretNameFor(headscale)
 			secret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      secretName,
-					Namespace: headscale.Namespace,
-				},
+				Name:      secretName,
+				Namespace: headscale.Namespace,
 			}
 			if err := r.Delete(ctx, secret); err != nil && !errors.IsNotFound(err) {
 				log.Error(err, "Failed to delete API key secret", "Name", secretName)
@@ -366,11 +363,9 @@ func (r *HeadscaleReconciler) updateStatus(
 // config.yaml. Rendering happens in renderConfigYAML; this only wraps the bytes.
 func (r *HeadscaleReconciler) configMapForHeadscale(h *headscalev1beta1.Headscale, rendered []byte) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      configMapNameFor(h),
-			Namespace: h.Namespace,
-			Labels:    labelsForHeadscale(h.Name),
-		},
+		Name:      configMapNameFor(h),
+		Namespace: h.Namespace,
+		Labels:    labelsForHeadscale(h.Name),
 		Data: map[string]string{
 			"config.yaml": string(rendered),
 		},
@@ -462,27 +457,23 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 			},
 			Env: h.Spec.ExtraEnv,
 			LivenessProbe: &corev1.Probe{
-				ProbeHandler: corev1.ProbeHandler{
-					HTTPGet: &corev1.HTTPGetAction{
-						Path: "/health",
-						Port: intstr.FromInt32(httpPort),
-					},
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/health",
+					Port: intstr.FromInt32(httpPort),
 				},
 				InitialDelaySeconds: 30,
 				PeriodSeconds:       10,
 			},
 			ReadinessProbe: &corev1.Probe{
-				ProbeHandler: corev1.ProbeHandler{
-					HTTPGet: &corev1.HTTPGetAction{
-						Path: "/health",
-						Port: intstr.FromInt32(httpPort),
-					},
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/health",
+					Port: intstr.FromInt32(httpPort),
 				},
 				InitialDelaySeconds: 5,
 				PeriodSeconds:       5,
 			},
 			SecurityContext: &corev1.SecurityContext{
-				AllowPrivilegeEscalation: ptr.To(false),
+				AllowPrivilegeEscalation: new(false),
 				Capabilities: &corev1.Capabilities{
 					Drop: []corev1.Capability{"ALL"},
 				},
@@ -497,12 +488,8 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 	volumes := []corev1.Volume{
 		{
 			Name: "config",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: configMapNameFor(h),
-					},
-				},
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				Name: configMapNameFor(h),
 			},
 		},
 	}
@@ -516,10 +503,8 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 	if autoManage {
 		// Add socket volume for communication between Headscale and API key manager
 		volumes = append(volumes, corev1.Volume{
-			Name: socketVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{},
-			},
+			Name:     socketVolumeName,
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
 		})
 
 		// Update Headscale container to mount the socket volume
@@ -562,7 +547,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 				},
 			},
 			SecurityContext: &corev1.SecurityContext{
-				AllowPrivilegeEscalation: ptr.To(false),
+				AllowPrivilegeEscalation: new(false),
 				Capabilities: &corev1.Capabilities{
 					Drop: []corev1.Capability{"ALL"},
 				},
@@ -582,11 +567,9 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 	}
 
 	return &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      h.Name,
-			Namespace: h.Namespace,
-			Labels:    labels,
-		},
+		Name:      h.Name,
+		Namespace: h.Namespace,
+		Labels:    labels,
 		Spec: appsv1.StatefulSetSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
@@ -603,10 +586,10 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 				Spec: corev1.PodSpec{
 					ServiceAccountName: h.Name,
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsUser:    ptr.To(int64(65532)),
-						RunAsGroup:   ptr.To(int64(65532)),
-						FSGroup:      ptr.To(int64(65532)),
-						RunAsNonRoot: ptr.To(true),
+						RunAsUser:    new(int64(65532)),
+						RunAsGroup:   new(int64(65532)),
+						FSGroup:      new(int64(65532)),
+						RunAsNonRoot: new(true),
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
@@ -618,9 +601,7 @@ func (r *HeadscaleReconciler) statefulSetForHeadscale(h *headscalev1beta1.Headsc
 			},
 			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
 				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "data",
-					},
+					Name: "data",
 					Spec: pvcSpec,
 				},
 			},
@@ -637,11 +618,9 @@ func (r *HeadscaleReconciler) serviceForHeadscale(h *headscalev1beta1.Headscale,
 	grpcPort := extractPort(view.GRPCListenAddr, 50443)
 
 	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      h.Name,
-			Namespace: h.Namespace,
-			Labels:    labels,
-		},
+		Name:      h.Name,
+		Namespace: h.Namespace,
+		Labels:    labels,
 		Spec: corev1.ServiceSpec{
 			Selector: labels,
 			Type:     corev1.ServiceTypeClusterIP,
@@ -671,11 +650,9 @@ func (r *HeadscaleReconciler) metricsServiceForHeadscale(h *headscalev1beta1.Hea
 	metricsPort := extractPort(view.MetricsListenAddr, 9090)
 
 	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      metricsServiceNameFor(h),
-			Namespace: h.Namespace,
-			Labels:    labels,
-		},
+		Name:      metricsServiceNameFor(h),
+		Namespace: h.Namespace,
+		Labels:    labels,
 		Spec: corev1.ServiceSpec{
 			Selector: labels,
 			Type:     corev1.ServiceTypeClusterIP,
@@ -694,22 +671,18 @@ func (r *HeadscaleReconciler) metricsServiceForHeadscale(h *headscalev1beta1.Hea
 // serviceAccountForHeadscale returns a ServiceAccount object for Headscale pods
 func (r *HeadscaleReconciler) serviceAccountForHeadscale(h *headscalev1beta1.Headscale) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      h.Name,
-			Namespace: h.Namespace,
-			Labels:    labelsForHeadscale(h.Name),
-		},
+		Name:      h.Name,
+		Namespace: h.Namespace,
+		Labels:    labelsForHeadscale(h.Name),
 	}
 }
 
 // roleForHeadscale returns a Role object for Headscale pods with permissions to manage Secrets
 func (r *HeadscaleReconciler) roleForHeadscale(h *headscalev1beta1.Headscale) *rbacv1.Role {
 	return &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      h.Name,
-			Namespace: h.Namespace,
-			Labels:    labelsForHeadscale(h.Name),
-		},
+		Name:      h.Name,
+		Namespace: h.Namespace,
+		Labels:    labelsForHeadscale(h.Name),
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups:     []string{""},
@@ -729,11 +702,9 @@ func (r *HeadscaleReconciler) roleForHeadscale(h *headscalev1beta1.Headscale) *r
 // roleBindingForHeadscale returns a RoleBinding object for Headscale pods
 func (r *HeadscaleReconciler) roleBindingForHeadscale(h *headscalev1beta1.Headscale) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      h.Name,
-			Namespace: h.Namespace,
-			Labels:    labelsForHeadscale(h.Name),
-		},
+		Name:      h.Name,
+		Namespace: h.Namespace,
+		Labels:    labelsForHeadscale(h.Name),
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "Role",

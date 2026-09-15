@@ -420,13 +420,11 @@ func (r *HeadscalePreAuthKeyReconciler) createPreAuthKey(
 	}
 
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secretName,
-			Namespace: preAuthKey.Namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "headscale-operator",
-				"headscale.infrado.cloud/type": "preauth-key",
-			},
+		Name:      secretName,
+		Namespace: preAuthKey.Namespace,
+		Labels: map[string]string{
+			"app.kubernetes.io/managed-by": "headscale-operator",
+			"headscale.infrado.cloud/type": "preauth-key",
 		},
 		StringData: map[string]string{
 			preAuthKeySecretKey: key.GetKey(),
@@ -531,10 +529,8 @@ func (r *HeadscalePreAuthKeyReconciler) deleteSecret(
 	}
 
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secretName,
-			Namespace: preAuthKey.Namespace,
-		},
+		Name:      secretName,
+		Namespace: preAuthKey.Namespace,
 	}
 
 	err := r.Delete(ctx, secret)
