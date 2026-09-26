@@ -308,7 +308,7 @@ func (r *HeadscaleAutoApproverReconciler) requeueApproversForHeadscale(
 	requests := make([]reconcile.Request, 0, len(list.Items))
 	for _, item := range list.Items {
 		requests = append(requests, reconcile.Request{
-			NamespacedName: types.NamespacedName{Name: item.Name, Namespace: item.Namespace},
+			Name: item.Name, Namespace: item.Namespace,
 		})
 	}
 	return requests

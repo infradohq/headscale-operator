@@ -89,7 +89,7 @@ metadata:
   name: headscale-sample
   namespace: headscale
 spec:
-  version: "v0.29.1"
+  version: "v0.29.4"
   replicas: 1
   config:
     server_url: http://vpn.headscale.local

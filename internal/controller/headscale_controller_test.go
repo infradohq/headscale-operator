@@ -15,7 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -76,10 +75,8 @@ var _ = Describe("Headscale Controller", func() {
 		It("should successfully create and reconcile a Headscale instance", func() {
 			By("Creating the Headscale resource")
 			headscale := &headscalev1beta1.Headscale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName,
-					Namespace: namespace,
-				},
+				Name:      resourceName,
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  testHeadscaleVersion,
 					Replicas: 1,
@@ -222,10 +219,8 @@ var _ = Describe("Headscale Controller", func() {
 			By("Creating the Headscale resource with AutoManage enabled")
 			autoManage := true
 			headscale := &headscalev1beta1.Headscale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-automanage",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-automanage",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  testHeadscaleVersion,
 					Replicas: 1,
@@ -280,10 +275,8 @@ var _ = Describe("Headscale Controller", func() {
 			By("Creating the Headscale resource with AutoManage disabled")
 			autoManage := false
 			headscale := &headscalev1beta1.Headscale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-no-automanage",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-no-automanage",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  testHeadscaleVersion,
 					Replicas: 1,
@@ -337,10 +330,8 @@ var _ = Describe("Headscale Controller", func() {
 		It("should update ConfigMap when config changes", func() {
 			By("Creating the Headscale resource")
 			headscale := &headscalev1beta1.Headscale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-update",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-update",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  testHeadscaleVersion,
 					Replicas: 1,
@@ -412,10 +403,8 @@ var _ = Describe("Headscale Controller", func() {
 		It("should handle deletion with finalizer", func() {
 			By("Creating the Headscale resource")
 			headscale := &headscalev1beta1.Headscale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-deletion",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-deletion",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  testHeadscaleVersion,
 					Replicas: 1,
@@ -480,10 +469,8 @@ var _ = Describe("Headscale Controller", func() {
 		It("should set correct replicas in StatefulSet", func() {
 			By("Creating the Headscale resource with custom replicas")
 			headscale := &headscalev1beta1.Headscale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-replicas",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-replicas",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  testHeadscaleVersion,
 					Replicas: 3,
@@ -529,10 +516,8 @@ var _ = Describe("Headscale Controller", func() {
 			By("Creating the Headscale resource with custom PVC size")
 			customSize := resource.NewQuantity(256*1024*1024, resource.BinarySI)
 			headscale := &headscalev1beta1.Headscale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-pvc",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-pvc",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  testHeadscaleVersion,
 					Replicas: 1,
@@ -584,10 +569,8 @@ var _ = Describe("Headscale Controller", func() {
 		It("should set correct security context in StatefulSet", func() {
 			By("Creating the Headscale resource")
 			headscale := &headscalev1beta1.Headscale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-security",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-security",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  testHeadscaleVersion,
 					Replicas: 1,
@@ -661,10 +644,8 @@ var _ = Describe("Headscale Controller", func() {
 		It("should include extra env, volumes, and volume mounts in StatefulSet", func() {
 			By("Creating the Headscale resource with extras")
 			headscale := &headscalev1beta1.Headscale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-extras",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-extras",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  testHeadscaleVersion,
 					Replicas: 1,
@@ -678,12 +659,8 @@ var _ = Describe("Headscale Controller", func() {
 					ExtraVolumes: []corev1.Volume{
 						{
 							Name: extraVolumeName,
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: "extra-configmap",
-									},
-								},
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								Name: "extra-configmap",
 							},
 						},
 					},
@@ -911,10 +888,8 @@ var _ = Describe("Headscale Controller", func() {
 
 			By("Creating the Headscale resource with an invalid inline policy")
 			headscale := &headscalev1beta1.Headscale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      badPolicyName.Name,
-					Namespace: badPolicyName.Namespace,
-				},
+				Name:      badPolicyName.Name,
+				Namespace: badPolicyName.Namespace,
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  testHeadscaleVersion,
 					Replicas: 1,
@@ -1007,15 +982,15 @@ var _ = Describe("computeReadyCondition", func() {
 
 	headscale := func() *headscalev1beta1.Headscale {
 		return &headscalev1beta1.Headscale{
-			ObjectMeta: metav1.ObjectMeta{Name: "hs", Namespace: namespace, Generation: 1},
+			Name: "hs", Namespace: namespace, Generation: 1,
 		}
 	}
 
 	statefulSet := func(ready, desired int32) *appsv1.StatefulSet {
 		return &appsv1.StatefulSet{
-			ObjectMeta: metav1.ObjectMeta{Name: "hs", Namespace: namespace},
-			Spec:       appsv1.StatefulSetSpec{Replicas: ptr.To(desired)},
-			Status:     appsv1.StatefulSetStatus{ReadyReplicas: ready},
+			Name: "hs", Namespace: namespace,
+			Spec:   appsv1.StatefulSetSpec{Replicas: new(desired)},
+			Status: appsv1.StatefulSetStatus{ReadyReplicas: ready},
 		}
 	}
 
@@ -1042,11 +1017,9 @@ var _ = Describe("computeReadyCondition", func() {
 
 	It("surfaces a crashing headscale container's error and emits an event", func() {
 		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "hs-0",
-				Namespace: namespace,
-				Labels:    labelsForHeadscale("hs"),
-			},
+			Name:      "hs-0",
+			Namespace: namespace,
+			Labels:    labelsForHeadscale("hs"),
 			Status: corev1.PodStatus{
 				ContainerStatuses: []corev1.ContainerStatus{{
 					Name:  headscaleAppName,

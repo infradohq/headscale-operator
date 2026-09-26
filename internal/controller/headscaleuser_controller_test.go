@@ -41,10 +41,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 		BeforeEach(func() {
 			By("Creating the Headscale instance")
 			headscale := &headscalev1beta1.Headscale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      headscaleName,
-					Namespace: namespace,
-				},
+				Name:      headscaleName,
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  testHeadscaleVersion,
 					Replicas: 1,
@@ -64,10 +62,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 
 			By("Creating the API key secret")
 			secret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testAPIKeySecret,
-					Namespace: namespace,
-				},
+				Name:      testAPIKeySecret,
+				Namespace: namespace,
 				Data: map[string][]byte{
 					"api-key": []byte("test-api-key-value"),
 				},
@@ -112,10 +108,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 		It("should successfully create and reconcile a HeadscaleUser", func() {
 			By("Creating the HeadscaleUser resource")
 			headscaleUser := &headscalev1beta1.HeadscaleUser{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName,
-					Namespace: namespace,
-				},
+				Name:      resourceName,
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleUserSpec{
 					HeadscaleRef: headscaleName,
 					Username:     "testuser",
@@ -157,10 +151,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 		It("should handle missing Headscale reference", func() {
 			By("Creating a HeadscaleUser with non-existent Headscale reference")
 			headscaleUser := &headscalev1beta1.HeadscaleUser{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-missing",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-missing",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleUserSpec{
 					HeadscaleRef: nonExistentHeadscale,
 					Username:     "testuser2",
@@ -208,10 +200,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 		It("should preserve LastTransitionTime when condition is unchanged on re-reconcile", func() {
 			By("Creating a HeadscaleUser with non-existent Headscale reference")
 			headscaleUser := &headscalev1beta1.HeadscaleUser{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-ltt",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-ltt",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleUserSpec{
 					HeadscaleRef: "non-existent-headscale-ltt",
 					Username:     "lttuser",
@@ -281,10 +271,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 		It("should validate immutable fields", func() {
 			By("Creating a HeadscaleUser")
 			headscaleUser := &headscalev1beta1.HeadscaleUser{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-immutable",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-immutable",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleUserSpec{
 					HeadscaleRef: headscaleName,
 					Username:     "immutableuser",
@@ -319,10 +307,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 		It("should handle deletion with finalizer", func() {
 			By("Creating a HeadscaleUser")
 			headscaleUser := &headscalev1beta1.HeadscaleUser{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-deletion",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-deletion",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleUserSpec{
 					HeadscaleRef: headscaleName,
 					Username:     "deleteuser",
@@ -387,10 +373,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 			By("Creating a HeadscaleUser with a Headscale reference")
 			tempHeadscaleName := "temp-headscale-for-deletion"
 			tempHeadscale := &headscalev1beta1.Headscale{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      tempHeadscaleName,
-					Namespace: namespace,
-				},
+				Name:      tempHeadscaleName,
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleSpec{
 					Version:  testHeadscaleVersion,
 					Replicas: 1,
@@ -400,10 +384,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 			Expect(k8sClient.Create(ctx, tempHeadscale)).To(Succeed())
 
 			headscaleUser := &headscalev1beta1.HeadscaleUser{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-orphaned",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-orphaned",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleUserSpec{
 					HeadscaleRef: tempHeadscaleName,
 					Username:     "orphaneduser",
@@ -450,10 +432,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 		It("should set status conditions correctly during user creation", func() {
 			By("Creating the HeadscaleUser resource")
 			headscaleUser := &headscalev1beta1.HeadscaleUser{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-conditions",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-conditions",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleUserSpec{
 					HeadscaleRef: headscaleName,
 					Username:     "conditionsuser",
@@ -493,10 +473,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 		It("should validate required username field", func() {
 			By("Creating a HeadscaleUser without username should fail")
 			headscaleUser := &headscalev1beta1.HeadscaleUser{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-no-username",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-no-username",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleUserSpec{
 					HeadscaleRef: headscaleName,
 					// Username is missing
@@ -509,10 +487,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 		It("should handle multiple HeadscaleUsers for the same Headscale", func() {
 			By("Creating first HeadscaleUser")
 			user1 := &headscalev1beta1.HeadscaleUser{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-multi1",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-multi1",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleUserSpec{
 					HeadscaleRef: headscaleName,
 					Username:     "multiuser1",
@@ -522,10 +498,8 @@ var _ = Describe("HeadscaleUser Controller", func() {
 
 			By("Creating second HeadscaleUser")
 			user2 := &headscalev1beta1.HeadscaleUser{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      resourceName + "-multi2",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-multi2",
+				Namespace: namespace,
 				Spec: headscalev1beta1.HeadscaleUserSpec{
 					HeadscaleRef: headscaleName,
 					Username:     "multiuser2",
@@ -540,18 +514,14 @@ var _ = Describe("HeadscaleUser Controller", func() {
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      resourceName + "-multi1",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-multi1",
+				Namespace: namespace,
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      resourceName + "-multi2",
-					Namespace: namespace,
-				},
+				Name:      resourceName + "-multi2",
+				Namespace: namespace,
 			})
 			Expect(err).NotTo(HaveOccurred())
 
