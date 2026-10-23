@@ -457,6 +457,9 @@ func (r *HeadscalePreAuthKeyReconciler) createPreAuthKey(
 
 	// Update status with preauth key information
 	preAuthKey.Status.KeyID = strconv.FormatUint(key.GetId(), 10)
+	if userID != 0 {
+		preAuthKey.Status.UserID = strconv.FormatUint(userID, 10)
+	}
 
 	if err := r.Status().Update(ctx, preAuthKey); err != nil {
 		return fmt.Errorf("failed to update HeadscalePreAuthKey status: %w", err)

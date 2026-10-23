@@ -21,9 +21,9 @@ spec:
     - jsonPath: .spec.headscaleUserRef
       name: HeadscaleUser
       type: string
-    - jsonPath: .spec.userId
+    - jsonPath: .status.userId
       name: UserID
-      type: integer
+      type: string
     - jsonPath: .spec.tags
       name: Tags
       type: string
@@ -180,6 +180,12 @@ spec:
                 x-kubernetes-list-type: map
               keyId:
                 description: KeyID is the ID of the preauth key in Headscale
+                type: string
+              userId:
+                description: |-
+                  UserID is the resolved Headscale user ID for this key.
+                  It is set when spec.headscaleUserRef or spec.userId is used, and stays
+                  empty for tags-only keys.
                 type: string
             type: object
         required:

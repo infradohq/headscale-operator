@@ -61,6 +61,12 @@ type HeadscalePreAuthKeyStatus struct {
 	// +optional
 	KeyID string `json:"keyId,omitempty"`
 
+	// UserID is the resolved Headscale user ID for this key.
+	// It is set when spec.headscaleUserRef or spec.userId is used, and stays
+	// empty for tags-only keys.
+	// +optional
+	UserID string `json:"userId,omitempty"`
+
 	// conditions represent the current state of the HeadscalePreAuthKey resource.
 	// +listType=map
 	// +listMapKey=type
@@ -72,7 +78,7 @@ type HeadscalePreAuthKeyStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=hspak;hspre
 // +kubebuilder:printcolumn:name="HeadscaleUser",type=string,JSONPath=`.spec.headscaleUserRef`
-// +kubebuilder:printcolumn:name="UserID",type=integer,JSONPath=`.spec.userId`
+// +kubebuilder:printcolumn:name="UserID",type=string,JSONPath=`.status.userId`
 // +kubebuilder:printcolumn:name="Tags",type=string,JSONPath=`.spec.tags`
 // +kubebuilder:printcolumn:name="Reusable",type=boolean,JSONPath=`.spec.reusable`
 // +kubebuilder:printcolumn:name="Ephemeral",type=boolean,JSONPath=`.spec.ephemeral`
