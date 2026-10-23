@@ -42,6 +42,9 @@ spec:
         - /manager
         args:
           {{- toYaml .Values.args | nindent 10 }}
+          {{- if .Values.metrics.enabled }}
+          - --metrics-bind-address=:{{ .Values.metrics.port }}
+          {{- end }}
         ports:
         - name: health
           containerPort: 8081
