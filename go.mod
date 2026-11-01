@@ -1,11 +1,11 @@
 module github.com/infradohq/headscale-operator
 
-go 1.27.0
+go 1.27.3
 
 require (
 	github.com/go-logr/logr v1.4.4
 	github.com/go-logr/zapr v1.3.0
-	github.com/juanfont/headscale v0.29.4
+	github.com/juanfont/headscale v0.29.6
 	github.com/onsi/ginkgo/v2 v2.33.1
 	github.com/onsi/gomega v1.44.0
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
@@ -84,7 +84,7 @@ require (
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
